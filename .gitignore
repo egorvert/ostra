@@ -1,0 +1,11 @@
+.DS_Store
+.build/
+.build-*/
+.swiftpm/
+*.xcodeproj
+xcuserdata/
+DerivedData/
+build/
+dist/
+*.app
+.claude/settings.local.json
