@@ -14,6 +14,8 @@ enum T3Method {
     static let fullThreadDiff = "orchestration.getFullThreadDiff"
     static let turnItem = "orchestration.getTurnItem"
     static let mutateProject = "projects.mutate"
+    static let createUploadURL = "attachments.createUploadUrl"
+    static let deleteAttachment = "attachments.delete"
 }
 
 /// Builds the payloads for the commands Ostra sends.
@@ -48,11 +50,15 @@ enum T3Commands {
     // MARK: - Threads
 
     /// The title for a thread that starts from `prompt`: its first line, cut to a readable length.
-    static func derivedTitle(from prompt: String) -> String {
+    ///
+    /// - Parameter fallback: The title for an empty prompt, such as the name of the first attachment.
+    static func derivedTitle(from prompt: String, fallback: String? = nil) -> String {
         let firstLine = prompt
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { !$0.isEmpty } ?? ""
+            .first { !$0.isEmpty }
+            ?? fallback?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? ""
         guard !firstLine.isEmpty else { return "New agent" }
         guard firstLine.count > 60 else { return firstLine }
         let cut = firstLine.prefix(60)
@@ -65,7 +71,24 @@ enum T3Commands {
         return cut.trimmingCharacters(in: .whitespaces) + "…"
     }
 
-    static func launchThread(_ request: LaunchRequest, commandID: String = newID()) -> JSONValue {
+    /// Starts a thread with its first message.
+    ///
+    /// - Parameters:
+    ///   - request: What to launch.
+    ///   - text: The message text to send in place of the prompt, for a prompt
+    ///     that carries a path block.
+    ///   - attachments: The stored attachments, as `T3Attachments.Upload.reference(id:)` builds them.
+    ///   - threadID: The ID for the new thread. The server needs one from the
+    ///     client to take ownership of uploaded attachments; without
+    ///     attachments, leave it nil and the server allocates the ID.
+    static func launchThread(
+        _ request: LaunchRequest,
+        text: String? = nil,
+        attachments: [JSONValue] = [],
+        threadID: String? = nil,
+        commandID: String = newID(),
+        messageID: String = newID()
+    ) -> JSONValue {
         let explicitTitle = request.title?.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasTitle = !(explicitTitle ?? "").isEmpty
         let workspace: JSONValue =
@@ -73,29 +96,39 @@ enum T3Commands {
             case .projectRoot: ["type": "root"]
             case .newWorktree(let baseRef): ["type": "worktree", "baseRef": .string(baseRef)]
             }
-        return [
+        var command: JSONValue = [
             "commandId": .string(commandID),
             "creationSource": "web",
             "projectId": .string(request.projectID.rawValue),
-            "title": .string(hasTitle ? explicitTitle! : derivedTitle(from: request.prompt)),
+            "title": .string(
+                hasTitle ? explicitTitle! : derivedTitle(from: request.prompt, fallback: request.attachments.first?.name)
+            ),
             // The server replaces a derived title with a generated one.
             "generateTitle": .bool(!hasTitle),
             "modelSelection": ["instanceId": .string(request.providerID), "model": .string(request.model)],
             "runtimeMode": .string(request.runtimeMode.rawValue),
             "interactionMode": .string(request.interactionMode.rawValue),
             "workspaceStrategy": workspace,
-            "initialMessage": ["messageId": .string(newID()), "text": .string(request.prompt), "attachments": []],
+            "initialMessage": [
+                "messageId": .string(messageID),
+                "text": .string(text ?? request.prompt),
+                "attachments": .array(attachments),
+            ],
         ]
+        if let threadID { command = command.setting("threadId", .string(threadID)) }
+        return command
     }
 
     /// Sends a message to an existing thread.
     ///
     /// `.automatic` lets the server choose: it starts a run on an idle thread
     /// and steers the active run on a busy one. `.queue` runs the message after
-    /// the active run finishes.
+    /// the active run finishes. `attachments` holds the stored attachments, as
+    /// `T3Attachments.Upload.reference(id:)` builds them.
     static func dispatchMessage(
         threadID: String,
         text: String,
+        attachments: [JSONValue] = [],
         delivery: MessageDelivery,
         commandID: String = newID(),
         messageID: String = newID()
@@ -108,7 +141,7 @@ enum T3Commands {
             "threadId": .string(threadID),
             "messageId": .string(messageID),
             "text": .string(text),
-            "attachments": [],
+            "attachments": .array(attachments),
         ]
         switch delivery {
         case .automatic:

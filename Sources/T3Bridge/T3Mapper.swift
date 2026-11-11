@@ -257,6 +257,8 @@ enum T3Mapper {
         var messageText: (String) -> String? = { _ in nil }
         var checkpointFiles: (String) -> [JSONValue]? = { _ in nil }
         var subagent: (String) -> JSONValue? = { _ in nil }
+        /// The server's attachment store. Nil leaves attachment paths out.
+        var attachmentsDirectory: URL?
 
         static var empty: ItemContext { ItemContext() }
     }
@@ -264,7 +266,13 @@ enum T3Mapper {
     private static func content(of item: JSONValue, context: ItemContext) -> TimelineItem.Content? {
         switch item.string("type") {
         case "user_message":
-            return .userMessage(text: messageText(of: item, context: context))
+            // Stored attachments ride on the item. The ones the server can't
+            // store ride in a path block at the end of the text.
+            let (text, named) = T3Attachments.splittingPathBlock(messageText(of: item, context: context))
+            let stored = item.array("attachments").compactMap {
+                T3Attachments.attachment($0, directory: context.attachmentsDirectory)
+            }
+            return .userMessage(text: text, attachments: stored + named)
         case "assistant_message":
             return .assistantMessage(
                 text: messageText(of: item, context: context),

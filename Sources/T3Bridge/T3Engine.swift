@@ -65,6 +65,8 @@ actor T3Engine {
 
     // Connection.
     private var connection: RPCConnection?
+    /// The server behind `connection`, for HTTP uploads.
+    private var endpoint: ServerEndpoint?
     private var runTask: Task<Void, Never>?
     private var subscriptionTasks: [Task<Void, Never>] = []
     private var connectionWaiters: [UUID: CheckedContinuation<RPCConnection, Error>] = [:]
@@ -119,6 +121,7 @@ actor T3Engine {
                     break
                 }
                 connection = fresh
+                self.endpoint = endpoint
                 attempt = 0
                 startSubscriptions(on: fresh)
                 await fresh.waitUntilClosed()
@@ -444,12 +447,16 @@ actor T3Engine {
 
     // MARK: - Thread hubs
 
+    private func makeProjection(_ threadID: String) -> ThreadProjection {
+        ThreadProjection(threadID: threadID, attachmentsDirectory: configuration.attachmentsDirectory)
+    }
+
     func addConsumer(_ id: UUID, thread threadID: String, _ continuation: AsyncStream<ConversationEvent>.Continuation) {
         if cancelledBeforeRegistration.remove(id) != nil {
             continuation.finish()
             return
         }
-        var hub = hubs[threadID] ?? Hub(projection: ThreadProjection(threadID: threadID))
+        var hub = hubs[threadID] ?? Hub(projection: makeProjection(threadID))
         hub.consumers[id] = continuation
         if hub.projection.isLoaded {
             continuation.yield(.reset(items: hub.projection.timeline, meta: hub.projection.meta))
@@ -472,7 +479,7 @@ actor T3Engine {
         let entry = threads[threadID]
         let wantsHold = entry != nil && entry?.archived == false && entry?.shell.object("pendingRuntimeRequest") != nil
         if wantsHold {
-            if hubs[threadID] == nil { hubs[threadID] = Hub(projection: ThreadProjection(threadID: threadID)) }
+            if hubs[threadID] == nil { hubs[threadID] = Hub(projection: makeProjection(threadID)) }
             hubs[threadID]?.held = true
             startUpstream(for: threadID)
             // A projection that's already open knows the request's details now.
@@ -651,7 +658,19 @@ actor T3Engine {
 
     func launchAgent(_ request: LaunchRequest) async throws -> AgentID {
         let connection = try await liveConnection()
-        let result = try await call(connection, T3Method.launchThread, T3Commands.launchThread(request))
+        let staged = try await stage(request.attachments, text: request.prompt, on: connection)
+        defer { discardUploads(staged.uploadIDs, on: connection) }
+        let result = try await call(
+            connection,
+            T3Method.launchThread,
+            T3Commands.launchThread(
+                request,
+                text: staged.text,
+                attachments: staged.references,
+                // The server copies uploads into a thread it can name up front.
+                threadID: staged.references.isEmpty ? nil : T3Commands.newID()
+            )
+        )
         guard let threadID = result.string("threadId") else {
             throw BackendError("The engine started the agent but didn't return its ID.")
         }
@@ -662,6 +681,19 @@ actor T3Engine {
             try? await Task.sleep(for: .milliseconds(20))
         }
         return AgentID(threadID)
+    }
+
+    func sendMessage(_ text: String, attachments: [Attachment], thread threadID: String, delivery: MessageDelivery) async throws {
+        let connection = try await liveConnection()
+        let staged = try await stage(attachments, text: text, on: connection)
+        defer { discardUploads(staged.uploadIDs, on: connection) }
+        let command = T3Commands.dispatchMessage(
+            threadID: threadID,
+            text: staged.text,
+            attachments: staged.references,
+            delivery: delivery
+        )
+        _ = try await call(connection, T3Method.dispatchCommand, command)
     }
 
     func dispatch(_ command: JSONValue) async throws {
@@ -734,6 +766,70 @@ actor T3Engine {
         )
         guard let item = result["item"], !item.isNull else { return nil }
         return item.string("output") ?? T3Mapper.readableText(item["output"])
+    }
+
+    // MARK: - Attachments
+
+    /// A message's attachments, ready for a launch or dispatch command.
+    private struct StagedMessage {
+        /// The message text, with a path block for the attachments the server can't store.
+        var text: String
+        /// The command's `attachments` entries.
+        var references: [JSONValue] = []
+        /// The uploads behind `references`. They're temporary: the server
+        /// copies each one into the thread when it accepts the command.
+        var uploadIDs: [String] = []
+    }
+
+    /// Uploads a message's attachments to the server's store.
+    private func stage(_ attachments: [Attachment], text: String, on connection: RPCConnection) async throws -> StagedMessage {
+        var staged = StagedMessage(text: text)
+        guard !attachments.isEmpty else { return staged }
+        guard let endpoint else { throw BackendError("The engine isn't connected.") }
+        var unstored: [Attachment] = []
+        do {
+            for attachment in attachments {
+                guard let path = attachment.path else {
+                    throw BackendError("The attachment \(attachment.name) has no file.")
+                }
+                let file = URL(fileURLWithPath: path)
+                guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]) else {
+                    throw BackendError("Couldn't read the attachment \(attachment.name).")
+                }
+                let byteCount = values.isRegularFile == true ? values.fileSize : nil
+                switch T3Attachments.route(for: attachment, byteCount: byteCount) {
+                case .pathBlock:
+                    var named = attachment
+                    named.byteCount = byteCount ?? 0
+                    unstored.append(named)
+                case .upload(let upload):
+                    let ticket = try await call(connection, T3Method.createUploadURL, upload.uploadURLRequest)
+                    guard let id = ticket.string("attachmentId"),
+                        let url = ticket.string("relativeUrl").flatMap({ URL(string: $0, relativeTo: endpoint.httpBase) })
+                    else {
+                        throw BackendError("The engine didn't return an upload address for \(attachment.name).")
+                    }
+                    staged.uploadIDs.append(id)
+                    try await T3Attachments.post(file, to: url, mimeType: upload.mimeType)
+                    staged.references.append(upload.reference(id: id))
+                }
+            }
+        } catch {
+            discardUploads(staged.uploadIDs, on: connection)
+            throw error
+        }
+        staged.text = T3Attachments.appendingPathBlock(unstored, to: text)
+        return staged
+    }
+
+    /// Removes temporary uploads. The server also sweeps the ones a client leaves behind.
+    private nonisolated func discardUploads(_ ids: [String], on connection: RPCConnection) {
+        guard !ids.isEmpty else { return }
+        Task {
+            for id in ids {
+                _ = try? await connection.call(T3Method.deleteAttachment, ["attachmentId": .string(id)])
+            }
+        }
     }
 
     private func call(_ connection: RPCConnection, _ method: String, _ payload: JSONValue) async throws -> JSONValue {
