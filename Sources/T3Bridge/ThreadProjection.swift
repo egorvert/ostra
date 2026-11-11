@@ -18,6 +18,8 @@ struct ThreadProjection: Sendable {
     }
 
     let threadID: String
+    /// The server's attachment store, for the local paths of message attachments.
+    let attachmentsDirectory: URL?
 
     private var runs: [String: JSONValue] = [:]
     private var attempts: [String: JSONValue] = [:]
@@ -38,8 +40,9 @@ struct ThreadProjection: Sendable {
     private(set) var sequence: Int?
     private(set) var isLoaded = false
 
-    init(threadID: String) {
+    init(threadID: String, attachmentsDirectory: URL? = nil) {
         self.threadID = threadID
+        self.attachmentsDirectory = attachmentsDirectory
     }
 
     /// The timeline in display order.
@@ -220,7 +223,8 @@ struct ThreadProjection: Sendable {
             runtimeRequest: { [runtimeRequests] in runtimeRequests[$0] },
             messageText: { [messageTexts] in messageTexts[$0] },
             checkpointFiles: { [checkpoints] in checkpoints[$0]?["files"]?.arrayValue },
-            subagent: { [subagents] in subagents[$0] }
+            subagent: { [subagents] in subagents[$0] },
+            attachmentsDirectory: attachmentsDirectory
         )
     }
 

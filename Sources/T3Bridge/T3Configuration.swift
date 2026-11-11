@@ -42,6 +42,8 @@ public struct T3Configuration: Sendable {
 
     /// The T3 home directory: the server's database, settings, and worktrees.
     var homeDirectory: URL { supportDirectory.appendingPathComponent("t3-home", isDirectory: true) }
+    /// Where the server keeps attachment content, one file per attachment ID.
+    var attachmentsDirectory: URL { homeDirectory.appendingPathComponent("userdata/attachments", isDirectory: true) }
     var serverRecordFile: URL { supportDirectory.appendingPathComponent("server.json") }
     var sessionTokenFile: URL { supportDirectory.appendingPathComponent("session-token") }
     var serverLogFile: URL { supportDirectory.appendingPathComponent("logs/t3-server.log") }

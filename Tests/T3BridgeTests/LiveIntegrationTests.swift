@@ -265,6 +265,173 @@ struct LiveIntegrationTests {
         await backend.shutdown()
     }
 
+    /// Launches an agent with a picture, sends pasted text with no message
+    /// text, and then asks about that text. Three short runs on the cheapest model.
+    @Test(.timeLimit(.minutes(5)))
+    func deliversAttachments() async throws {
+        let support = try Self.makeTemporaryDirectory("attachments")
+        let repository = try Self.makeTemporaryDirectory("attachments-repo")
+        let staging = try Self.makeTemporaryDirectory("attachments-staging")
+        defer {
+            try? FileManager.default.removeItem(at: support)
+            try? FileManager.default.removeItem(at: repository)
+            try? FileManager.default.removeItem(at: staging)
+        }
+        try Data("# Attachments\n".utf8).write(to: repository.appendingPathComponent("README.md"))
+        try await Self.git(["init", "-q"], in: repository)
+        try await Self.git(["add", "-A"], in: repository)
+        try await Self.git(["commit", "-qm", "init"], in: repository)
+
+        // A 64 by 64 PNG that's solid red.
+        let png = try #require(
+            Data(
+                base64Encoded:
+                    "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAS0lEQVR42u3PQQkAAAgAsetfWiP4FgYrsKZeS0BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEDgsqnc8OJg6Ln3AAAAAElFTkSuQmCC"
+            )
+        )
+        let pictureFile = staging.appendingPathComponent("swatch.png")
+        try png.write(to: pictureFile)
+        let picture = Attachment(
+            kind: .image, name: "swatch.png", mimeType: "image/png", byteCount: png.count, path: pictureFile.path
+        )
+        let pastedText = Data("The secret word is PINEAPPLE.\n".utf8)
+        let pastedFile = staging.appendingPathComponent("pasted.txt")
+        try pastedText.write(to: pastedFile)
+        let pasted = Attachment(
+            kind: .text, name: "Pasted text", mimeType: "text/plain", byteCount: pastedText.count, path: pastedFile.path
+        )
+
+        let configuration = T3Configuration(supportDirectory: support)
+        let backend = T3Backend(configuration: configuration)
+        let recorder = Recorder()
+        let events = Task {
+            for await event in backend.events() { await recorder.apply(event) }
+        }
+        defer { events.cancel() }
+        await backend.start()
+        do {
+            try await waitUntil("Codex to become ready", timeout: .seconds(120)) {
+                await recorder.providers.first { $0.id == "codex" }?.isReady == true
+            }
+            let project = try await backend.addProject(path: repository.path, title: nil)
+            let agentID = try await backend.launchAgent(
+                LaunchRequest(
+                    projectID: project.id,
+                    prompt: "What single color fills the attached image? Answer with one word. Don't run any commands.",
+                    attachments: [picture],
+                    providerID: "codex",
+                    model: "gpt-5.6-luna",
+                    runtimeMode: .fullAccess
+                )
+            )
+            let conversation = Task {
+                for await event in backend.conversation(for: agentID) { await recorder.apply(event) }
+            }
+            defer { conversation.cancel() }
+
+            @Sendable func userMessages() async -> [(text: String, attachments: [Attachment])] {
+                await recorder.sortedTimeline.compactMap { item in
+                    if case .userMessage(let text, let attachments) = item.content { (text, attachments) } else { nil }
+                }
+            }
+            @Sendable func assistantTexts() async -> [String] {
+                await recorder.sortedTimeline.compactMap { item in
+                    if case .assistantMessage(let text, _) = item.content { text } else { nil }
+                }
+            }
+
+            try await waitUntil("the first run to finish", timeout: .seconds(120)) {
+                let phase = await recorder.agents[agentID]?.phase
+                return phase == .done || phase == .failed
+            }
+            try await waitUntil("the first reply", timeout: .seconds(10)) { await !assistantTexts().isEmpty }
+            print("LIVE attachments timeline 1:\n" + (await recorder.sortedTimeline).map(describe).joined(separator: "\n"))
+            #expect(await recorder.agents[agentID]?.phase == .done)
+
+            // The user message comes back with the picture and a path in the server's store.
+            let first = try #require(await userMessages().first)
+            print("LIVE attachments first user message: \(first)")
+            #expect(first.text == "What single color fills the attached image? Answer with one word. Don't run any commands.")
+            let returned = try #require(first.attachments.first)
+            #expect(first.attachments.count == 1)
+            #expect(returned.kind == .image)
+            #expect(returned.name == "swatch.png")
+            #expect(returned.mimeType == "image/png")
+            #expect(returned.byteCount == png.count)
+            let storedPath = try #require(returned.path, "the image has no local path")
+            #expect(storedPath.hasPrefix(configuration.attachmentsDirectory.path + "/"))
+            #expect(try Data(contentsOf: URL(fileURLWithPath: storedPath)) == png)
+
+            // The model saw the picture itself: it names the color without
+            // opening the file. The server's own workspace step is a command too.
+            let openedTheFile = await recorder.sortedTimeline.contains { item in
+                switch item.content {
+                case .command(let call): call.command.contains(returned.id) || call.command.contains("swatch")
+                case .tool: true
+                default: false
+                }
+            }
+            let firstReply = await assistantTexts().joined(separator: " ")
+            print("LIVE attachments image reply: \(firstReply) (used tools: \(openedTheFile))")
+            #expect(firstReply.lowercased().contains("red"))
+            #expect(!openedTheFile, "the model used a tool, so the reply doesn't prove image input")
+
+            // The temporary upload is gone once the thread owns a copy.
+            try await waitUntil("the temporary upload to go", timeout: .seconds(10)) {
+                let names = (try? FileManager.default.contentsOfDirectory(atPath: configuration.attachmentsDirectory.path)) ?? []
+                return !names.contains { $0.hasPrefix("pending-") }
+            }
+
+            // A message with no text carries pasted text on its own.
+            let repliesBefore = await assistantTexts().count
+            try await backend.sendMessage("", attachments: [pasted], to: agentID, delivery: .automatic)
+            try await waitUntil("the second user message", timeout: .seconds(20)) { await userMessages().count == 2 }
+            try await waitUntil("the second reply", timeout: .seconds(120)) {
+                let phase = await recorder.agents[agentID]?.phase
+                return await assistantTexts().count > repliesBefore && (phase == .done || phase == .failed)
+            }
+            print("LIVE attachments timeline 2:\n" + (await recorder.sortedTimeline).map(describe).joined(separator: "\n"))
+            let second = try #require(await userMessages().last)
+            print("LIVE attachments second user message: \(second)")
+            #expect(second.text == "")
+            let returnedText = try #require(second.attachments.first)
+            #expect(second.attachments.count == 1)
+            #expect(returnedText.kind == .text)
+            #expect(returnedText.name == "Pasted text")
+            #expect(returnedText.mimeType == "text/plain")
+            #expect(returnedText.byteCount == pastedText.count)
+            let storedTextPath = try #require(returnedText.path, "the pasted text has no local path")
+            #expect(storedTextPath.hasSuffix(".txt"))
+            #expect(try Data(contentsOf: URL(fileURLWithPath: storedTextPath)) == pastedText)
+            let secondReply = await assistantTexts().dropFirst(repliesBefore).joined(separator: " ")
+            print("LIVE attachments reply to the bare attachment: \(secondReply)")
+            #expect(await recorder.agents[agentID]?.phase == .done)
+
+            // The agent reads the pasted text from the server's store when asked.
+            let repliesBeforeQuestion = await assistantTexts().count
+            try await backend.sendMessage(
+                "Reply with only the secret word from the text I attached.", to: agentID, delivery: .automatic
+            )
+            try await waitUntil("the third reply", timeout: .seconds(120)) {
+                let phase = await recorder.agents[agentID]?.phase
+                return await assistantTexts().count > repliesBeforeQuestion && (phase == .done || phase == .failed)
+            }
+            print("LIVE attachments timeline 3:\n" + (await recorder.sortedTimeline).map(describe).joined(separator: "\n"))
+            let thirdReply = await assistantTexts().dropFirst(repliesBeforeQuestion).joined(separator: " ")
+            print("LIVE attachments text reply: \(thirdReply)")
+            #expect(thirdReply.uppercased().contains("PINEAPPLE"))
+            #expect(await recorder.agents[agentID]?.phase == .done)
+        } catch {
+            print("LIVE attachments failure: \(error)")
+            print("LIVE attachments timeline:\n" + (await recorder.sortedTimeline).map(describe).joined(separator: "\n"))
+            let log = (try? String(contentsOf: support.appendingPathComponent("logs/t3-server.log"), encoding: .utf8)) ?? ""
+            print("LIVE server log tail:\n\(log.suffix(3_000))")
+            await backend.shutdown()
+            throw error
+        }
+        await backend.shutdown()
+    }
+
     @Test(.timeLimit(.minutes(6)))
     func runsAnAgentEndToEnd() async throws {
         let support = try Self.makeTemporaryDirectory("support")
