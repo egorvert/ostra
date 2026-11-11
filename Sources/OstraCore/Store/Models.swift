@@ -85,7 +85,7 @@ public enum LiveLine {
         case .starting: "Starting…"
         case .working: "Working…"
         case .awaitingApproval:
-            snapshot.pendingRequest?.prompt.map { "Wants to run \(oneLine($0))" } ?? "Waiting for approval"
+            snapshot.pendingRequest?.prompt.map { "Wants to run \(oneLine(shortCommand($0)))" } ?? "Waiting for approval"
         case .awaitingInput:
             snapshot.pendingRequest?.questions.first.map { oneLine($0.prompt) } ?? "Has a question"
         case .done: "Done"

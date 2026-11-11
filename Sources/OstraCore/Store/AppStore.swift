@@ -137,7 +137,7 @@ public final class AppStore {
 
     /// The rectangle that contains every group.
     public var contentBounds: CGRect? {
-        let frames = projects.map { groupFrame(for: $0.id) }
+        let frames = projects.filter { projectAnchors[$0.id] != nil }.map { groupFrame(for: $0.id) }
         guard let first = frames.first else { return nil }
         return frames.dropFirst().reduce(first) { $0.union($1) }
     }
@@ -564,7 +564,8 @@ public final class AppStore {
         guard depth < 8 else { return }
         let margin = CanvasLayout.groupGap * 0.6
         let frame = groupFrame(for: project)
-        for other in projects where other.id != project {
+        // A project without an anchor isn't on the canvas yet, so it can't collide.
+        for other in projects where other.id != project && projectAnchors[other.id] != nil {
             let otherFrame = groupFrame(for: other.id)
             guard frame.insetBy(dx: -margin, dy: -margin).intersects(otherFrame) else { continue }
             let horizontal = otherFrame.midX >= frame.midX

@@ -25,6 +25,7 @@ let package = Package(
                 "T3Bridge",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
+            resources: [.copy("Resources/Fonts")],
             swiftSettings: [.defaultIsolation(MainActor.self)]
         ),
         .testTarget(name: "OstraCoreTests", dependencies: ["OstraCore"]),
