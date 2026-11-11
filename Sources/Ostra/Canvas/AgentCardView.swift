@@ -56,8 +56,11 @@ struct AgentCardView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            StatusDot(phase: agent.phase, unseen: agent.snapshot.hasUnseenResult, ringed: true)
-                .offset(x: 3, y: -3)
+            // The dot's center sits on the card's outline, at the middle of
+            // the corner arc, the way the wireframe draws it.
+            let inset = Theme.cardRadius * (1 - 0.7071)
+            StatusDot(phase: agent.phase, unseen: agent.snapshot.hasUnseenResult, size: 11, ringed: true)
+                .offset(x: 5.5 - inset, y: inset - 5.5)
         }
         .shadow(
             color: .black.opacity(isDragging ? 0.16 : (hovering ? 0.08 : 0.035)),
@@ -128,7 +131,9 @@ struct StatusDot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var breathing = false
 
-    private var color: Color? {
+    private var color: Color? { Self.color(phase: phase, unseen: unseen) }
+
+    static func color(phase: AgentPhase, unseen: Bool) -> Color? {
         switch phase {
         case .starting, .working: Theme.neutral
         case .awaitingApproval, .awaitingInput: Theme.amber
@@ -136,6 +141,11 @@ struct StatusDot: View {
         case .done: unseen ? Theme.green : nil
         case .idle, .interrupted: nil
         }
+    }
+
+    /// True when the state has a dot. Resting agents have none.
+    static func isVisible(phase: AgentPhase, unseen: Bool) -> Bool {
+        color(phase: phase, unseen: unseen) != nil
     }
 
     var body: some View {
@@ -147,9 +157,11 @@ struct StatusDot: View {
                     .opacity(phase.isRunning && breathing ? 0.35 : 1)
                     .background {
                         if ringed {
+                            // A hairline gap in the canvas color keeps the dot
+                            // crisp where it crosses the outline.
                             Circle()
                                 .fill(app.settings.data.canvasColor.flatMap(Color.init(hex:)) ?? Theme.canvasBase(scheme))
-                                .padding(-2.5)
+                                .padding(-1.5)
                         }
                     }
             } else {

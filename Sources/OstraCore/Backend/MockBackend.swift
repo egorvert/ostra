@@ -214,6 +214,12 @@ public actor MockBackend: AgentBackend {
         return touched ? Self.sampleDiff : ""
     }
 
+    public func commandOutput(for agent: AgentID, itemID: String) async throws -> String? {
+        guard let item = timelines[agent]?.first(where: { $0.id == itemID }),
+              case let .command(call) = item.content else { return nil }
+        return call.output
+    }
+
     // MARK: - Sinks
 
     private func attachEvents(_ id: UUID, _ continuation: AsyncStream<BackendEvent>.Continuation) {

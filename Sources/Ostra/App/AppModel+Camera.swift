@@ -10,20 +10,14 @@ extension AppModel {
         min(640, max(300, viewSize.height * 0.62))
     }
 
-    /// The band at the top of the window that the dock never covers, so the
-    /// selected agent's card stays in view above its conversation.
-    var topBand: CGFloat { 206 }
-
     /// The tallest the dock (pane, request bar, and chat box) gets.
     var dockMaxHeight: CGFloat {
-        max(260, viewSize.height - topBand - Theme.hudMargin)
+        max(260, viewSize.height - 64 - Theme.hudMargin)
     }
 
-    /// The dock grew or shrank: keep the selected card clear of it.
-    func dockFrameChanged() {
-        guard let agent = store.selectedAgent, draggingAgentID == nil else { return }
-        reveal(agent, animated: true)
-    }
+    /// The dock grew or shrank. The canvas stays where it is: panels float
+    /// over it, and the selected agent is a highlight, not a destination.
+    func dockFrameChanged() {}
 
     func screenPoint(_ world: CGPoint) -> CGPoint {
         CGPoint(
@@ -39,17 +33,12 @@ extension AppModel {
         )
     }
 
-    /// The part of the window that no HUD panel covers.
+    /// The part of the window to frame content in: clear of the chat box and
+    /// of the left panel, but not of the chat pane, which floats over the canvas.
     var freeRegion: CGRect {
         var rect = CGRect(origin: .zero, size: viewSize)
         let top: CGFloat = 50
-        // Measure the dock where possible; estimate it before its first layout.
-        var bottom: CGFloat = 92
-        if let dock = hudRegions.frame("chat"), dock.height > 0 {
-            bottom = viewSize.height - dock.minY + 14
-        } else if chatOpen, store.selectedAgentID != nil {
-            bottom += chatPaneHeight + 10
-        }
+        let bottom: CGFloat = 92
         var left: CGFloat = 28
         if workspaceOpen {
             left = workspaceWidth + Theme.hudMargin + 24
@@ -70,32 +59,34 @@ extension AppModel {
         }
     }
 
-    /// Moves the camera only as far as it takes to bring the agent's card into the free region.
+    /// Brings an agent's card on screen when it's outside the window.
+    ///
+    /// The camera doesn't follow the selection. A card that's visible anywhere
+    /// in the window stays where it is, even under a panel; only a card that
+    /// lies off-screen moves the camera, and only far enough to show it.
     func reveal(_ agent: AgentModel, animated: Bool) {
         guard viewSize.width > 0 else { return }
         let card = CanvasLayout.footprintRect(at: agent.position)
         let origin = screenPoint(card.origin)
         let frame = CGRect(x: origin.x, y: origin.y, width: card.width * zoom, height: card.height * zoom)
-        let free = freeRegion.insetBy(dx: 16, dy: 12)
-        guard !free.contains(frame) else { return }
+        let window = CGRect(origin: .zero, size: viewSize)
+        // Mostly visible is visible enough.
+        let visible = window.intersection(frame)
+        if !visible.isNull, visible.width * visible.height >= frame.width * frame.height * 0.6 { return }
 
+        let target = window.insetBy(dx: 36, dy: 56)
         var dx: CGFloat = 0
         var dy: CGFloat = 0
-        if frame.width > free.width {
-            dx = free.midX - frame.midX
-        } else if frame.minX < free.minX {
-            dx = free.minX - frame.minX
-        } else if frame.maxX > free.maxX {
-            dx = free.maxX - frame.maxX
+        if frame.minX < target.minX {
+            dx = target.minX - frame.minX
+        } else if frame.maxX > target.maxX {
+            dx = target.maxX - frame.maxX
         }
-        if frame.height > free.height {
-            dy = free.midY - frame.midY
-        } else if frame.minY < free.minY {
-            dy = free.minY - frame.minY
-        } else if frame.maxY > free.maxY {
-            dy = free.maxY - frame.maxY
+        if frame.minY < target.minY {
+            dy = target.minY - frame.minY
+        } else if frame.maxY > target.maxY {
+            dy = target.maxY - frame.maxY
         }
-
         var camera = store.camera
         camera.x -= dx / zoom
         camera.y -= dy / zoom
@@ -112,7 +103,7 @@ extension AppModel {
     }
 
     /// Frames a world rectangle in the free region.
-    func frame(_ bounds: CGRect, animated: Bool, maxZoom: CGFloat = 1) {
+    func frame(_ bounds: CGRect, animated: Bool, maxZoom: CGFloat = 0.9) {
         guard viewSize.width > 0, bounds.width > 0, bounds.height > 0 else { return }
         let free = freeRegion.insetBy(dx: 30, dy: 24)
         let fit = min(free.width / bounds.width, free.height / bounds.height, maxZoom)

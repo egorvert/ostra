@@ -111,7 +111,6 @@ struct AgentPickerView: View {
                                     .onTapGesture {
                                         app.closeOverlay()
                                         app.select(agent.id, openChat: app.chatOpen)
-                                        app.center(on: agent, animated: true)
                                     }
                             }
                         }

@@ -508,6 +508,8 @@ public final class AppStore {
             }
             if before != merged { agent.snapshot = merged }
             refreshLiveLine(agent)
+            // The user is looking at the selected agent, so its result is seen.
+            if agent.id == selectedAgentID { markVisited(agent) }
             return
         }
 

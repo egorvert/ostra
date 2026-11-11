@@ -130,7 +130,6 @@ extension AppModel {
             ) { [self] in
                 store.currentProjectID = project.id
                 closeOverlay()
-                frame(store.groupFrame(for: project.id), animated: true)
             })
         }
         items.append(item("n", "New folder…") { [self] in addProjectFromPanel() })

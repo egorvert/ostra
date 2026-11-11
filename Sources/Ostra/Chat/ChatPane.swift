@@ -34,7 +34,9 @@ struct ChatPane: View {
 
     private func header(tab: ChatTab) -> some View {
         HStack(spacing: 10) {
-            StatusDot(phase: agent.phase, unseen: false, size: 8)
+            if StatusDot.isVisible(phase: agent.phase, unseen: false) {
+                StatusDot(phase: agent.phase, unseen: false, size: 8)
+            }
 
             Text(agent.name)
                 .font(Theme.ui(13.5, .medium))

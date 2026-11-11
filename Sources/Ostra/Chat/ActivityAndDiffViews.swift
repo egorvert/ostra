@@ -39,7 +39,7 @@ struct ActivityView: View {
                         }
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(section.steps) { item in
-                                StepLine(item: item, startsExpanded: item.status == .running)
+                                StepLine(item: item, agentID: agent.id, startsExpanded: item.status == .running)
                             }
                         }
                         .padding(.leading, 9)

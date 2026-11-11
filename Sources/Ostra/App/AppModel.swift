@@ -100,6 +100,8 @@ final class AppModel {
     var drafts: [String: String] = [:]
     /// Text for the diff panes, per agent.
     var diffs: [AgentID: DiffState] = [:]
+    /// The height each agent's conversation needs, so the pane can hug short ones.
+    var conversationHeights: [AgentID: CGFloat] = [:]
 
     // MARK: Canvas
 

@@ -123,4 +123,8 @@ public protocol AgentBackend: AnyObject, Sendable {
 
     /// Everything the agent changed, as unified diff text.
     func diff(for agent: AgentID) async throws -> String
+
+    /// The output of a `.command` row, which the conversation stream may leave
+    /// out. `itemID` is the row's `TimelineItem.id`.
+    func commandOutput(for agent: AgentID, itemID: String) async throws -> String?
 }

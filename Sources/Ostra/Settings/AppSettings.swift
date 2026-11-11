@@ -94,10 +94,13 @@ final class AppSettings {
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let key = "ostra.settings.v1"
+    /// False for scripted development runs, which must not change real preferences.
+    @ObservationIgnored private let persists: Bool
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, persists: Bool = true) {
         self.defaults = defaults
-        if let stored = defaults.data(forKey: key),
+        self.persists = persists
+        if persists, let stored = defaults.data(forKey: key),
            let decoded = try? JSONDecoder().decode(SettingsData.self, from: stored) {
             data = decoded
         } else {
@@ -106,7 +109,7 @@ final class AppSettings {
     }
 
     private func save() {
-        guard let encoded = try? JSONEncoder().encode(data) else { return }
+        guard persists, let encoded = try? JSONEncoder().encode(data) else { return }
         defaults.set(encoded, forKey: key)
     }
 

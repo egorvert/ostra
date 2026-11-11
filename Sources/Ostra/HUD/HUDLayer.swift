@@ -304,6 +304,7 @@ struct AgentRow: View {
     var body: some View {
         HStack(spacing: 10) {
             StatusDot(phase: agent.phase, unseen: agent.snapshot.hasUnseenResult, size: 8)
+                .frame(width: 8)
             Text(agent.name)
                 .font(Theme.ui(12.5, .medium))
             Text(agent.phase.isActive || agent.phase == .failed ? agent.liveLine : agent.title)

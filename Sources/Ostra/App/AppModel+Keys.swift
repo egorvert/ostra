@@ -150,7 +150,6 @@ extension AppModel {
                 focusInput()
             } else {
                 toggleChat(animated: false)
-                if chatOpen, let agent = store.selectedAgent { reveal(agent, animated: true) }
             }
         case .tab:
             cycle(forward: !press.shift)
@@ -348,7 +347,6 @@ extension AppModel {
                 closeOverlay()
                 focus.blur()
                 select(agent.id, openChat: chatOpen)
-                center(on: agent, animated: true)
             }
         default:
             // Everything else types into the search field.

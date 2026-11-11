@@ -119,10 +119,17 @@ struct FilesView: View {
     @State private var selected: String?
 
     var body: some View {
+        let rows = tree.rows(root: root)
         VStack(spacing: 0) {
+            if rows.isEmpty {
+                Text("No files in this folder")
+                    .font(Theme.text(12.5))
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(tree.rows(root: root)) { row in
+                    ForEach(rows) { row in
                         FileRowView(row: row, selected: row.path == selected)
                             .onTapGesture {
                                 if row.isDirectory {
@@ -136,7 +143,7 @@ struct FilesView: View {
                 .padding(.vertical, 8)
                 .padding(.horizontal, 8)
             }
-            .frame(maxHeight: selected == nil ? .infinity : 230)
+            .frame(maxHeight: rows.isEmpty ? 0 : (selected == nil ? .infinity : 230))
 
             if let selected {
                 Hairline()
@@ -366,15 +373,14 @@ private struct FileViewer: View {
 final class TerminalSessions {
     static let shared = TerminalSessions()
     private var views: [String: LocalProcessTerminalView] = [:]
+    private var dark = false
 
     func view(for directory: String) -> LocalProcessTerminalView {
         if let existing = views[directory] { return existing }
         let terminal = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 520, height: 400))
         terminal.font = Fonts.nsMono(12)
-        terminal.nativeBackgroundColor = .clear
-        terminal.nativeForegroundColor = .labelColor
         terminal.caretColor = NSColor(Theme.accent)
-        terminal.layer?.backgroundColor = NSColor.clear.cgColor
+        style(terminal)
 
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         var environment = ProcessInfo.processInfo.environment
@@ -391,17 +397,53 @@ final class TerminalSessions {
         return terminal
     }
 
+    /// Matches every terminal to the app's color scheme.
+    func setDark(_ dark: Bool) {
+        guard dark != self.dark else { return }
+        self.dark = dark
+        for view in views.values { style(view) }
+    }
+
     func terminateAll() {
         for view in views.values { view.terminate() }
         views.removeAll()
+    }
+
+    /// The terminal draws straight onto the glass panel, so its colors follow the panel's.
+    private func style(_ terminal: LocalProcessTerminalView) {
+        terminal.nativeBackgroundColor = .clear
+        terminal.layer?.backgroundColor = NSColor.clear.cgColor
+        terminal.nativeForegroundColor = dark ? NSColor(white: 0.92, alpha: 1) : NSColor(white: 0.13, alpha: 1)
+        terminal.installColors(Self.palette(dark: dark))
+    }
+
+    /// Sixteen ANSI colors that keep their contrast on a light or a dark panel.
+    private static func palette(dark: Bool) -> [SwiftTerm.Color] {
+        let light: [(Int, Int, Int)] = [
+            (38, 38, 38), (196, 45, 45), (30, 128, 64), (166, 110, 10),
+            (28, 100, 220), (150, 62, 190), (16, 128, 140), (120, 120, 120),
+            (90, 90, 90), (224, 70, 70), (40, 154, 82), (190, 130, 16),
+            (52, 124, 240), (176, 88, 214), (24, 150, 162), (60, 60, 60),
+        ]
+        let night: [(Int, Int, Int)] = [
+            (60, 62, 68), (240, 108, 108), (112, 208, 140), (236, 196, 104),
+            (112, 168, 255), (204, 148, 240), (104, 208, 220), (200, 200, 204),
+            (128, 130, 138), (250, 136, 136), (140, 224, 164), (244, 212, 132),
+            (144, 188, 255), (220, 172, 248), (136, 222, 232), (240, 240, 242),
+        ]
+        return (dark ? night : light).map { red, green, blue in
+            SwiftTerm.Color(red: UInt16(red * 257), green: UInt16(green * 257), blue: UInt16(blue * 257))
+        }
     }
 }
 
 /// A shell in the agent's working directory.
 struct TerminalPane: NSViewRepresentable {
     let directory: String
+    @Environment(\.colorScheme) private var scheme
 
     func makeNSView(context: Context) -> NSView {
+        TerminalSessions.shared.setDark(scheme == .dark)
         let container = NSView()
         let terminal = TerminalSessions.shared.view(for: directory)
         terminal.removeFromSuperview()
@@ -419,5 +461,7 @@ struct TerminalPane: NSViewRepresentable {
         return container
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        TerminalSessions.shared.setDark(scheme == .dark)
+    }
 }

@@ -1,6 +1,7 @@
 import AppKit
 import OstraCore
 import SwiftUI
+import T3Bridge
 
 @main
 struct OstraApp: App {
@@ -30,7 +31,7 @@ enum Runtime {
     static let options = LaunchOptions()
     static let model: AppModel = {
         let store = AppStore(backend: Backends.make(options), persistenceURL: options.stateURL)
-        return AppModel(store: store, settings: AppSettings())
+        return AppModel(store: store, settings: AppSettings(persists: options.script == nil))
     }()
 }
 
@@ -40,13 +41,19 @@ struct LaunchOptions {
     var demo: Bool
     /// Steps for `DebugScript`, used to drive the UI in development.
     var script: String?
+    /// Replaces the support directory, so development runs don't touch real state.
+    var supportOverride: String?
 
     init(arguments: [String] = CommandLine.arguments, environment: [String: String] = ProcessInfo.processInfo.environment) {
         demo = arguments.contains("--demo") || environment["OSTRA_DEMO"] == "1"
         script = environment["OSTRA_SCRIPT"]
+        supportOverride = environment["OSTRA_SUPPORT_DIR"]
     }
 
     var supportDirectory: URL {
+        if let supportOverride, !supportOverride.isEmpty {
+            return URL(fileURLWithPath: supportOverride, isDirectory: true)
+        }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         return base.appendingPathComponent("Ostra", isDirectory: true)
@@ -60,11 +67,17 @@ struct LaunchOptions {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isShuttingDown = false
+    private var signalSources: [DispatchSourceSignal] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Needed when the binary runs outside an app bundle during development.
         NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        // A scripted run stays in the background, so it never takes the
+        // keyboard away from whatever the developer is typing in.
+        if Runtime.options.script == nil {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        installSignalHandlers()
         Runtime.model.start()
         if let script = Runtime.options.script {
             DebugScript(model: Runtime.model).run(script)
@@ -73,26 +86,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    /// Routes SIGTERM and SIGINT through the normal quit path, so the engine
+    /// the app started stops with it.
+    private func installSignalHandlers() {
+        for number in [SIGTERM, SIGINT] {
+            signal(number, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
+            source.setEventHandler { Runtime.quit() }
+            source.resume()
+            signalSources.append(source)
+        }
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !isShuttingDown else { return .terminateNow }
         isShuttingDown = true
+        TerminalSessions.shared.terminateAll()
         // Give the engine a moment to stop its processes, but never hang the quit.
-        Task {
-            await withTaskGroup(of: Void.self) { group in
-                group.addTask { await Runtime.model.store.shutdown() }
-                group.addTask { try? await Task.sleep(for: .seconds(4)) }
-                await group.next()
-                group.cancelAll()
-            }
+        var replied = false
+        let reply = {
+            guard !replied else { return }
+            replied = true
             NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        Task {
+            await Runtime.model.store.shutdown()
+            reply()
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(5))
+            reply()
         }
         return .terminateLater
     }
 }
 
+extension Runtime {
+    /// Quits through the run loop.
+    ///
+    /// `terminate(_:)` spins a nested run loop while the engine shuts down. If
+    /// it's called from a block on the main dispatch queue, that queue stays
+    /// busy and the shutdown work, which runs on the main actor, never starts.
+    static func quit() {
+        NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0)
+    }
+}
+
 enum Backends {
     static func make(_ options: LaunchOptions) -> any AgentBackend {
-        MockBackend()
+        if options.demo { return MockBackend() }
+        return T3Backend(configuration: T3Configuration(supportDirectory: options.supportDirectory))
     }
 }
 
@@ -123,8 +166,27 @@ final class DebugScript {
                     model.draft = argument.replacingOccurrences(of: "_", with: " ")
                 case "query":
                     model.pickerQuery = argument.replacingOccurrences(of: "_", with: " ")
+                case "project":
+                    model.store.addProject(path: argument)
+                case "model":
+                    let parts = argument.split(separator: "/", maxSplits: 1).map(String.init)
+                    if parts.count == 2 {
+                        model.store.spawnProviderID = parts[0]
+                        model.store.spawnModelID = parts[1]
+                    }
+                case "send":
+                    model.submitDraft()
+                case "frost":
+                    model.settings.data.chatFrost = Double(argument) ?? 0.5
+                case "appearance":
+                    model.settings.data.appearance = AppearanceMode(rawValue: argument) ?? .light
+                case "image":
+                    model.settings.data.backgroundImagePath = argument
+                    model.settings.data.canvasStyle = argument.isEmpty ? .dots : .image
+                case "tool":
+                    if let tool = WorkspaceTool(rawValue: argument) { model.setWorkspaceTool(tool) }
                 case "quit":
-                    NSApp.terminate(nil)
+                    Runtime.quit()
                 default:
                     break
                 }

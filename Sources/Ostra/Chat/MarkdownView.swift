@@ -109,58 +109,53 @@ struct MarkdownView: View {
     }
 }
 
-/// A fenced code block with a copy button.
+/// A fenced code block: a slim header with the language and a copy button, then the code.
 struct CodeBlock: View {
     var language: String?
     var text: String
     var size: CGFloat
 
-    @State private var hovering = false
-    @State private var copied = false
-
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            Text(text.isEmpty ? " " : text)
-                .font(Theme.mono(size))
-                .lineSpacing(size * 0.3)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: true, vertical: true)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+        VStack(alignment: .leading, spacing: 0) {
+            if let language, !language.isEmpty {
+                HStack {
+                    Text(language)
+                        .font(Theme.mono(11))
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                    CopyButton(text: text)
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 4)
+                .frame(height: 30)
+                Hairline()
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(text.isEmpty ? " " : text)
+                    .font(Theme.mono(size))
+                    .lineSpacing(size * 0.32)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: true, vertical: true)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(0.055))
+                .fill(Color.primary.opacity(0.04))
         }
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.75)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
         }
         .overlay(alignment: .topTrailing) {
-            Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-                copied = true
-                Task {
-                    try? await Task.sleep(for: .seconds(1.4))
-                    copied = false
-                }
-            } label: {
-                Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(copied ? Theme.green : Color.secondary)
-                    .contentTransition(.symbolEffect(.replace))
-                    .frame(width: 24, height: 22)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            // Blocks without a header keep the copy button in the corner.
+            if language == nil || language?.isEmpty == true {
+                CopyButton(text: text)
+                    .padding(4)
             }
-            .buttonStyle(.pressable)
-            .padding(6)
-            .opacity(hovering || copied ? 1 : 0)
-            .animation(Motion.hover, value: hovering)
-            .help("Copy")
         }
-        .onHover { hovering = $0 }
     }
 }
 
