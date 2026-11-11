@@ -38,6 +38,8 @@ public struct LaunchRequest: Sendable {
     public var projectID: ProjectID
     /// The first message for the agent.
     public var prompt: String
+    /// Files, images, and pasted text that go with the first message.
+    public var attachments: [Attachment]
     /// The task title. When nil, the engine derives one from the prompt.
     public var title: String?
     public var providerID: String
@@ -49,6 +51,7 @@ public struct LaunchRequest: Sendable {
     public init(
         projectID: ProjectID,
         prompt: String,
+        attachments: [Attachment] = [],
         title: String? = nil,
         providerID: String,
         model: String,
@@ -58,6 +61,7 @@ public struct LaunchRequest: Sendable {
     ) {
         self.projectID = projectID
         self.prompt = prompt
+        self.attachments = attachments
         self.title = title
         self.providerID = providerID
         self.model = model
@@ -102,7 +106,8 @@ public protocol AgentBackend: AnyObject, Sendable {
 
     /// Creates an agent and sends its first message.
     func launchAgent(_ request: LaunchRequest) async throws -> AgentID
-    func sendMessage(_ text: String, to agent: AgentID, delivery: MessageDelivery) async throws
+    /// Sends a message, with any attachments, to an existing agent.
+    func sendMessage(_ text: String, attachments: [Attachment], to agent: AgentID, delivery: MessageDelivery) async throws
     /// Stops the agent's active run.
     func interrupt(_ agent: AgentID) async throws
     func respond(to request: RequestID, of agent: AgentID, decision: ApprovalDecision) async throws
@@ -127,4 +132,11 @@ public protocol AgentBackend: AnyObject, Sendable {
     /// The output of a `.command` row, which the conversation stream may leave
     /// out. `itemID` is the row's `TimelineItem.id`.
     func commandOutput(for agent: AgentID, itemID: String) async throws -> String?
+}
+
+extension AgentBackend {
+    /// Sends a message that carries no attachments.
+    public func sendMessage(_ text: String, to agent: AgentID, delivery: MessageDelivery) async throws {
+        try await sendMessage(text, attachments: [], to: agent, delivery: delivery)
+    }
 }

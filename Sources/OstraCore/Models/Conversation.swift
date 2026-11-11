@@ -12,7 +12,7 @@ public struct TimelineItem: Identifiable, Hashable, Sendable {
     }
 
     public enum Content: Hashable, Sendable {
-        case userMessage(text: String)
+        case userMessage(text: String, attachments: [Attachment] = [])
         case assistantMessage(text: String, streaming: Bool)
         case reasoning(text: String, streaming: Bool)
         case command(CommandCall)

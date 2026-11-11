@@ -9,7 +9,7 @@ import SwiftUI
 /// and the work between them (thinking, commands, edits) folds into one line
 /// that opens on demand.
 enum ChatRow: Identifiable {
-    case user(id: String, text: String)
+    case user(id: String, text: String, attachments: [Attachment])
     case assistant(id: String, text: String, streaming: Bool)
     case work(id: String, items: [TimelineItem])
     case changes(id: String, files: [FileStat])
@@ -21,7 +21,7 @@ enum ChatRow: Identifiable {
 
     var id: String {
         switch self {
-        case let .user(id, _), let .assistant(id, _, _), let .work(id, _), let .changes(id, _),
+        case let .user(id, _, _), let .assistant(id, _, _), let .work(id, _), let .changes(id, _),
              let .approval(id, _), let .question(id, _), let .plan(id, _), let .todos(id, _),
              let .notice(id, _, _):
             id
@@ -50,9 +50,9 @@ enum ChatRow: Identifiable {
 
         for item in items {
             switch item.content {
-            case let .userMessage(text):
+            case let .userMessage(text, attachments):
                 flush()
-                rows.append(.user(id: item.id, text: text))
+                rows.append(.user(id: item.id, text: text, attachments: attachments))
             case let .assistantMessage(text, streaming):
                 if text.isEmpty { continue }
                 flush()
@@ -197,7 +197,7 @@ struct ChatRowView: View {
 
     var body: some View {
         switch row {
-        case let .user(_, text):
+        case let .user(_, text, _):
             HStack(alignment: .bottom, spacing: 6) {
                 Spacer(minLength: 48)
                 CopyButton(text: text)

@@ -68,7 +68,7 @@ struct ActivityView: View {
         var current = RunSection(id: "start", prompt: nil, steps: [])
         for item in items {
             switch item.content {
-            case let .userMessage(text):
+            case let .userMessage(text, _):
                 if !current.steps.isEmpty || current.prompt != nil { sections.append(current) }
                 current = RunSection(id: item.id, prompt: text, steps: [])
             case .reasoning, .command, .fileChange, .tool, .checkpoint, .subagent:

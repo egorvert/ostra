@@ -83,7 +83,7 @@ private func waitUntil(
 private func describe(_ item: TimelineItem) -> String {
     let body: String
     switch item.content {
-    case .userMessage(let text): body = "user: \(text.prefix(60))"
+    case .userMessage(let text, _): body = "user: \(text.prefix(60))"
     case .assistantMessage(let text, let streaming): body = "assistant\(streaming ? "…" : ""): \(text.prefix(60))"
     case .reasoning(let text, _): body = "reasoning: \(text.prefix(40))"
     case .command(let call): body = "command: \(call.command.prefix(60)) exit=\(call.exitCode.map(String.init) ?? "-")"

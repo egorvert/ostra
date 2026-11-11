@@ -59,7 +59,7 @@ private func tag(_ item: TimelineItem) -> String {
         projection.load(snapshot: try #require(items.first))
         #expect(projection.isLoaded)
         #expect(projection.timeline.map(tag) == ["user", "command"])
-        guard case .userMessage(let text) = try #require(projection.timeline.first).content else {
+        guard case .userMessage(let text, _) = try #require(projection.timeline.first).content else {
             Issue.record("the first row isn't the user message")
             return
         }

@@ -125,18 +125,18 @@ public actor MockBackend: AgentBackend {
         timelines[id] = []
         metas[id] = ConversationMeta()
         emit(.agentUpserted(snapshot))
-        beginRun(id, prompt: request.prompt)
+        beginRun(id, prompt: request.prompt, attachments: request.attachments)
         return id
     }
 
-    public func sendMessage(_ text: String, to agent: AgentID, delivery: MessageDelivery) async throws {
+    public func sendMessage(_ text: String, attachments: [Attachment], to agent: AgentID, delivery: MessageDelivery) async throws {
         guard agents[agent] != nil else { throw BackendError("The agent doesn't exist.") }
         if runs[agent] != nil {
             // Steering: the note joins the conversation and the run carries on.
-            append(agent, .userMessage(text: text))
+            append(agent, .userMessage(text: text, attachments: attachments))
             return
         }
-        beginRun(agent, prompt: text)
+        beginRun(agent, prompt: text, attachments: attachments)
     }
 
     public func interrupt(_ agent: AgentID) async throws {
@@ -321,15 +321,15 @@ public actor MockBackend: AgentBackend {
 
     // MARK: - Scripted runs
 
-    private func beginRun(_ agent: AgentID, prompt: String) {
+    private func beginRun(_ agent: AgentID, prompt: String, attachments: [Attachment] = []) {
         runs[agent]?.cancel()
         runs[agent] = Task { [weak self] in
-            await self?.run(agent, prompt: prompt)
+            await self?.run(agent, prompt: prompt, attachments: attachments)
         }
     }
 
-    private func run(_ agent: AgentID, prompt: String, announce: Bool = true) async {
-        if announce { append(agent, .userMessage(text: prompt)) }
+    private func run(_ agent: AgentID, prompt: String, attachments: [Attachment] = [], announce: Bool = true) async {
+        if announce { append(agent, .userMessage(text: prompt, attachments: attachments)) }
         update(agent) {
             $0.phase = .starting
             $0.activeRunID = "run-\(UUID().uuidString.prefix(6))"

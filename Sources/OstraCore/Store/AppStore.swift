@@ -229,9 +229,9 @@ public final class AppStore {
     // MARK: - Actions
 
     /// Creates an agent in the current project with `prompt` as its first message.
-    public func spawn(prompt: String) {
+    public func spawn(prompt: String, attachments: [Attachment] = []) {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !attachments.isEmpty else { return }
         guard let project = currentProject else {
             toast(.init(kind: .error, text: "Add a project folder first."))
             return
@@ -246,6 +246,7 @@ public final class AppStore {
         let request = LaunchRequest(
             projectID: project.id,
             prompt: text,
+            attachments: attachments,
             providerID: provider.id,
             model: model.id,
             runtimeMode: mode
@@ -261,16 +262,21 @@ public final class AppStore {
     }
 
     /// Sends text to an agent. If the agent waits on a question, the text answers it.
-    public func send(_ text: String, to id: AgentID, queue: Bool = false) {
+    public func send(_ text: String, attachments: [Attachment] = [], to id: AgentID, queue: Bool = false) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let agent = agent(id) else { return }
-        if agent.phase == .awaitingInput, let request = agent.snapshot.pendingRequest,
+        guard !trimmed.isEmpty || !attachments.isEmpty, let agent = agent(id) else { return }
+        if attachments.isEmpty, agent.phase == .awaitingInput, let request = agent.snapshot.pendingRequest,
            let question = request.questions.first, request.questions.count == 1 {
             answer(request: request.id, of: id, answers: [question.id: trimmed])
             return
         }
         run("Couldn't send the message") { store in
-            try await store.backend.sendMessage(trimmed, to: id, delivery: queue ? .queue : .automatic)
+            try await store.backend.sendMessage(
+                trimmed,
+                attachments: attachments,
+                to: id,
+                delivery: queue ? .queue : .automatic
+            )
         }
     }
 

@@ -52,7 +52,8 @@ public final class T3Backend: AgentBackend {
         try await engine.launchAgent(request)
     }
 
-    public func sendMessage(_ text: String, to agent: AgentID, delivery: MessageDelivery) async throws {
+    public func sendMessage(_ text: String, attachments: [Attachment], to agent: AgentID, delivery: MessageDelivery) async throws {
+        // TODO: Upload `attachments` to the server and reference them in the command.
         try await engine.dispatch(T3Commands.dispatchMessage(threadID: agent.rawValue, text: text, delivery: delivery))
     }
 
