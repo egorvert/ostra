@@ -313,7 +313,7 @@ private struct StatusPane: View {
         .frame(width: 270)
         .frame(maxHeight: 440)
         .fixedSize(horizontal: false, vertical: true)
-        .glassPanel(cornerRadius: 22, frost: app.settings.data.panelFrost)
+        .glassPanel(cornerRadius: 24, frost: app.settings.data.panelFrost)
         .hudRegion("status", in: app.hudRegions)
     }
 
@@ -344,7 +344,7 @@ struct AgentRow: View {
             StatusDot(phase: agent.phase, unseen: agent.snapshot.hasUnseenResult, size: 8)
                 .frame(width: 8)
             Text(agent.name)
-                .font(Theme.ui(12.5, .medium))
+                .font(Theme.ui(13, .medium))
             Text(agent.phase.isActive || agent.phase == .failed ? agent.liveLine : agent.title)
                 .font(Theme.text(12))
                 .foregroundStyle(.secondary)
@@ -354,7 +354,7 @@ struct AgentRow: View {
         .padding(.horizontal, 8)
         .frame(height: 32)
         .background {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.primary.opacity(highlighted ? 0.08 : (hovering ? 0.045 : 0)))
         }
         .contentShape(Rectangle())

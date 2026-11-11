@@ -70,8 +70,6 @@ enum Theme {
     static let inputRadius: CGFloat = 24
     static let cardRadius: CGFloat = 18
     static let groupRadius: CGFloat = 28
-    /// A highlighted row inside a menu or a list.
-    static let rowRadius: CGFloat = 12
     static let chatWidth: CGFloat = 600
     static let chatMinWidth: CGFloat = 400
     static let cornerButton: CGFloat = 44

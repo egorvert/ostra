@@ -14,7 +14,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Settings")
-                    .font(Theme.ui(17, .semibold))
+                    .font(Theme.ui(16, .semibold))
                 Spacer()
                 Button("Reset") { app.settings.reset() }
                     .buttonStyle(.plain)
@@ -50,7 +50,7 @@ struct SettingsView: View {
                                 if settings.data.canvasColor != nil {
                                     Button("Default") { settings.data.canvasColor = nil }
                                         .buttonStyle(.plain)
-                                        .font(Theme.ui(11.5, .medium))
+                                        .font(Theme.ui(12, .medium))
                                         .foregroundStyle(.secondary)
                                 }
                             }
@@ -102,7 +102,7 @@ struct SettingsView: View {
                                     Spacer()
                                     Text("Opaque")
                                 }
-                                .font(Theme.ui(10.5, .medium))
+                                .font(Theme.ui(11, .medium))
                                 .foregroundStyle(.tertiary)
                                 .frame(width: 280)
                             }
@@ -132,7 +132,7 @@ struct SettingsView: View {
                     section("Engine") {
                         row("Status") {
                             Text(engineStatus)
-                                .font(Theme.text(12.5))
+                                .font(Theme.text(13))
                                 .foregroundStyle(app.store.connection.isReady ? Theme.green : Color.secondary)
                         }
                         ForEach(app.store.providers) { provider in
@@ -156,7 +156,7 @@ struct SettingsView: View {
         }
         .frame(width: 600)
         .frame(maxHeight: 680)
-        .glassPanel(cornerRadius: 28, frost: max(0.6, app.settings.data.panelFrost))
+        .glassPanel(cornerRadius: 28, frost: max(0.8, app.settings.data.panelFrost))
         .padding(40)
     }
 
@@ -222,7 +222,7 @@ struct SettingsView: View {
         HStack(alignment: .firstTextBaseline, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(label)
-                    .font(Theme.ui(12.5, .medium))
+                    .font(Theme.ui(13, .medium))
                 if let note {
                     Text(note)
                         .font(Theme.text(11))

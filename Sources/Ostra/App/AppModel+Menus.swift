@@ -65,6 +65,7 @@ extension AppModel {
     /// The menu from the wireframe: a few destinations, each one key away.
     private var mainMenu: KeyMenu {
         var items = [
+            item("k", "Search everything", detail: "⌘K") { [self] in open(.search, animated: false) },
             item("a", "See agents") { [self] in open(.picker, animated: false) },
             item("s", "Status pane", checked: statusPaneOpen) { [self] in
                 closeOverlay()
@@ -80,7 +81,7 @@ extension AppModel {
                 item("r", "Restore archived", detail: "\(store.archivedAgents.count)") { [self] in
                     open(.menu(.archived), animated: false)
                 },
-                at: 3
+                at: 4
             )
         }
         return KeyMenu(title: "Menu", parent: nil, items: items)
@@ -223,23 +224,24 @@ enum ShortcutCatalog {
     static let sections: [Section] = [
         Section(title: "Modes", note: "Single keys work while the chat box doesn't have focus.", entries: [
             Entry(keys: ["↩"], title: "Type in the chat box"),
-            Entry(keys: ["esc"], title: "Leave the chat box, then close panels"),
+            Entry(keys: ["esc"], title: "Leave the chat box, close a panel"),
             Entry(keys: ["space"], title: "Open or close the chat"),
         ]),
         Section(title: "Primitives", entries: [
             Entry(keys: ["A"], title: "Add an agent or a project"),
             Entry(keys: ["S"], title: "Select an agent by name"),
-            Entry(keys: ["D"], title: "Archive the agent (undo with Z)"),
+            Entry(keys: ["D"], title: "Archive the agent (Z undoes it)"),
+            Entry(keys: ["R"], title: "Rename the agent"),
             Entry(keys: ["⇧", "D"], title: "Delete the agent for good"),
             Entry(keys: ["M"], title: "Open the menu"),
-            Entry(keys: ["C"], title: "Open the workspace panel"),
+            Entry(keys: ["C"], title: "Open the left panel"),
         ]),
         Section(title: "Agents", entries: [
             Entry(keys: ["⇥"], title: "Next agent (⇧⇥ for previous)"),
             Entry(keys: ["⌃", "⇥"], title: "Next agent, even while typing"),
-            Entry(keys: ["F"], title: "Filter the cycle: all, needs you, running"),
-            Entry(keys: ["←", "↓", "↑", "→"], title: "Move to the nearest agent"),
-            Entry(keys: ["Y"], title: "Approve (⇧Y for the whole session)"),
+            Entry(keys: ["F"], title: "Change what Tab visits"),
+            Entry(keys: ["←", "↓", "↑", "→"], title: "Nearest agent"),
+            Entry(keys: ["Y"], title: "Approve (⇧Y for always)"),
             Entry(keys: ["N"], title: "Deny"),
             Entry(keys: ["1", "–", "9"], title: "Pick an answer to a question"),
             Entry(keys: ["X"], title: "Stop the agent"),
@@ -247,9 +249,11 @@ enum ShortcutCatalog {
         Section(title: "Chat", entries: [
             Entry(keys: ["↩"], title: "Send (⇧↩ for a new line)"),
             Entry(keys: ["⌘", "⇧", "↩"], title: "Queue behind the current run"),
-            Entry(keys: ["["], title: "Previous view"),
-            Entry(keys: ["]"], title: "Next view: chat, activity, diff"),
-            Entry(keys: ["\\"], title: "Split: keep this agent beside the next"),
+            Entry(keys: ["1", "2", "3"], title: "Chat, activity, diff"),
+            Entry(keys: ["[", "]"], title: "Previous and next view"),
+            Entry(keys: ["⌘", "V"], title: "Paste text, images, or files"),
+            Entry(keys: ["⌘", "U"], title: "Attach files"),
+            Entry(keys: ["\\"], title: "Split the chat in two"),
             Entry(keys: ["|"], title: "Swap the two sides"),
             Entry(keys: ["⌘", "↩"], title: "Approve while typing"),
             Entry(keys: ["⌃", "C"], title: "Stop the agent while typing"),
@@ -261,14 +265,16 @@ enum ShortcutCatalog {
             Entry(keys: ["G"], title: "Go to the selected agent"),
             Entry(keys: ["T"], title: "Toggle the status pane"),
         ]),
-        Section(title: "Workspace panel", entries: [
+        Section(title: "Left panel", entries: [
+            Entry(keys: ["C"], title: "Open or close the panel"),
             Entry(keys: ["⌘", "1"], title: "Diff"),
             Entry(keys: ["⌘", "2"], title: "Files"),
             Entry(keys: ["⌘", "3"], title: "Terminal (⇧esc to leave it)"),
             Entry(keys: ["⌘", "4"], title: "Activity"),
+            Entry(keys: ["1", "–", "4"], title: "The same, with the chat closed"),
         ]),
         Section(title: "Anywhere", entries: [
-            Entry(keys: ["⌘", "K"], title: "Menu"),
+            Entry(keys: ["⌘", "K"], title: "Search everything"),
             Entry(keys: ["⌘", "N"], title: "New agent"),
             Entry(keys: ["⌘", ","], title: "Settings"),
             Entry(keys: ["⌘", "."], title: "Stop the agent"),

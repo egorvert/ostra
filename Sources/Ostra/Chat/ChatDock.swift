@@ -353,7 +353,7 @@ struct ApprovalBar: View {
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .fill(Color.primary.opacity(0.05))
                     }
             }
@@ -366,8 +366,8 @@ struct ApprovalBar: View {
                     app.store.respond(.accept, to: agent.id)
                 } label: {
                     HStack(spacing: 6) {
-                        Text("Allow").font(Theme.ui(12.5, .medium))
-                        Text(app.isTyping ? "⌘↩" : "Y").font(Theme.mono(10.5, .medium)).opacity(0.7)
+                        Text("Allow").font(Theme.ui(13, .medium))
+                        Text(app.isTyping ? "⌘↩" : "Y").font(Theme.mono(11, .medium)).opacity(0.7)
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 13)
@@ -377,9 +377,9 @@ struct ApprovalBar: View {
                 .buttonStyle(.pressable)
             }
         }
-        .padding(.leading, 18)
+        .padding(.leading, 20)
         .padding(.trailing, 12)
-        .padding(.top, 14)
+        .padding(.top, 16)
         .padding(.bottom, 12)
         .glassPanel(cornerRadius: 20, frost: max(app.settings.data.chatFrost, 0.35))
     }
@@ -396,8 +396,8 @@ struct ApprovalBar: View {
     private func quiet(_ title: String, key: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Text(title).font(Theme.ui(12.5, .medium))
-                Text(key).font(Theme.mono(10.5, .medium)).foregroundStyle(.tertiary)
+                Text(title).font(Theme.ui(13, .medium))
+                Text(key).font(Theme.mono(11, .medium)).foregroundStyle(.tertiary)
             }
             .foregroundStyle(.primary.opacity(0.8))
             .frame(height: 28)
@@ -430,7 +430,7 @@ struct QuestionBar: View {
             }
             if request.questions.count > 1 {
                 Text("\(request.questions.count - 1) more to answer after this.")
-                    .font(Theme.text(11.5))
+                    .font(Theme.text(12))
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 8)
             }
@@ -460,7 +460,7 @@ private struct ChoiceRow: View {
                     .font(Theme.text(13))
                 if let detail = choice.detail {
                     Text(detail)
-                        .font(Theme.text(12.5))
+                        .font(Theme.text(13))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
@@ -469,7 +469,7 @@ private struct ChoiceRow: View {
             .padding(.horizontal, 8)
             .frame(height: 30)
             .background {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.primary.opacity(hovering ? 0.06 : 0))
             }
             .contentShape(Rectangle())

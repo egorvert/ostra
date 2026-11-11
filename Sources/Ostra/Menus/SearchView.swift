@@ -72,7 +72,8 @@ struct SearchView: View {
             }
         }
         .frame(width: 640)
-        .glassPanel(cornerRadius: Theme.panelRadius, frost: max(0.55, app.settings.data.panelFrost))
+        // Search sits over the whole canvas, so it frosts enough to read over anything.
+        .glassPanel(cornerRadius: Theme.panelRadius, frost: max(0.8, app.settings.data.panelFrost))
         .onAppear { focused = true }
     }
 }
@@ -125,7 +126,7 @@ private struct SearchRow: View {
         .padding(.horizontal, 12)
         .frame(height: 40)
         .background {
-            RoundedRectangle(cornerRadius: Theme.rowRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color.primary.opacity(highlighted ? 0.07 : 0))
         }
         .contentShape(Rectangle())

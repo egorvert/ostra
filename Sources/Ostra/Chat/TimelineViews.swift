@@ -127,9 +127,9 @@ struct ChatTimeline: View {
                         .padding(.top, rows.isEmpty ? 0 : 16)
                 }
             }
-            .padding(.horizontal, 22)
+            .padding(.horizontal, 20)
             .padding(.top, 20)
-            .padding(.bottom, 22)
+            .padding(.bottom, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
             .scrollTargetLayout()
             .onGeometryChange(for: CGFloat.self) { $0.size.height.rounded() } action: { height in
@@ -293,7 +293,7 @@ struct ChatRowView: View {
                 Text("Plan")
                     .font(Theme.ui(12, .medium))
                     .foregroundStyle(.secondary)
-                MarkdownView(text: text, size: 13.5)
+                MarkdownView(text: text, size: 14)
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -313,7 +313,7 @@ struct ChatRowView: View {
                         .frame(width: 6, height: 6)
                 }
                 Text(text)
-                    .font(Theme.text(12.5))
+                    .font(Theme.text(13))
                     .foregroundStyle(level == .error ? AnyShapeStyle(Theme.red) : AnyShapeStyle(.secondary))
                     .textSelection(.enabled)
             }
@@ -587,9 +587,9 @@ struct StepLine: View {
         case .running, .pending:
             ProgressView().controlSize(.mini).frame(width: 12, height: 12)
         case .failed:
-            Text("Failed").font(Theme.text(11.5)).foregroundStyle(Theme.red)
+            Text("Failed").font(Theme.text(12)).foregroundStyle(Theme.red)
         case .cancelled:
-            Text("Stopped").font(Theme.text(11.5)).foregroundStyle(.tertiary)
+            Text("Stopped").font(Theme.text(12)).foregroundStyle(.tertiary)
         case .waiting, .completed:
             if case let .command(call) = item.content, let code = call.exitCode, code != 0 {
                 Text("exit \(code)").font(Theme.mono(11)).foregroundStyle(Theme.red)
@@ -669,7 +669,7 @@ private struct ChangesRow: View {
                 Text("View diff")
                     .foregroundStyle(hovering ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
             }
-            .font(Theme.text(12.5))
+            .font(Theme.text(13))
             .padding(.horizontal, 12)
             .frame(height: 34)
             .background {
@@ -689,7 +689,7 @@ private struct ApprovalLine: View {
     var body: some View {
         HStack(spacing: 7) {
             Text(label)
-                .font(Theme.text(12.5))
+                .font(Theme.text(13))
                 .foregroundStyle(.tertiary)
             if let prompt = record.prompt {
                 Text(LiveLine.shortCommand(prompt))

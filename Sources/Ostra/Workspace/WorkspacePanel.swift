@@ -91,7 +91,7 @@ struct WorkspacePanel: View {
 
     private func emptyState(_ text: String) -> some View {
         Text(text)
-            .font(Theme.text(12.5))
+            .font(Theme.text(13))
             .foregroundStyle(.tertiary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -134,7 +134,7 @@ struct FilesView: View {
         VStack(spacing: 0) {
             if rows.isEmpty {
                 Text("No files in this folder")
-                    .font(Theme.text(12.5))
+                    .font(Theme.text(13))
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -237,10 +237,11 @@ private struct FileRowView: View {
                 .rotationEffect(.degrees(row.isExpanded ? 90 : 0))
                 .opacity(row.isDirectory ? 1 : 0)
                 .frame(width: 10)
-            Image(systemName: row.isDirectory ? "folder.fill" : "doc.text")
-                .font(.system(size: 10.5))
-                .foregroundStyle(row.isDirectory ? Theme.accent.opacity(0.8) : Color.secondary)
-                .frame(width: 15)
+            // Folders stay monochrome: the accent is for selection alone.
+            Image(systemName: row.isDirectory ? "folder" : "doc.text")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
             Text(row.name)
                 .font(Theme.text(12))
                 .foregroundStyle(row.name.hasPrefix(".") ? .secondary : .primary)
@@ -248,11 +249,11 @@ private struct FileRowView: View {
                 .truncationMode(.middle)
             Spacer(minLength: 0)
         }
-        .padding(.leading, CGFloat(row.depth) * 14 + 4)
-        .padding(.trailing, 6)
-        .frame(height: 24)
+        .padding(.leading, CGFloat(row.depth) * 14 + 6)
+        .padding(.trailing, 8)
+        .frame(height: 26)
         .background {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.primary.opacity(selected ? 0.10 : (hovering ? 0.05 : 0)))
         }
         .contentShape(Rectangle())
@@ -329,7 +330,7 @@ private struct FileViewer: View {
                                     .textSelection(.enabled)
                                     .fixedSize()
                             }
-                            .font(Theme.mono(11.5))
+                            .font(Theme.mono(12))
                             .frame(height: 17)
                         }
                         if truncated {

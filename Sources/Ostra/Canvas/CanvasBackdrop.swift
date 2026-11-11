@@ -126,14 +126,15 @@ struct AdaptiveTone: ViewModifier {
         let luminance = frame.map {
             CanvasBackdrop.shared.luminance(in: $0, viewSize: app.viewSize, settings: app.settings.data, scheme: scheme)
         }
-        // -1 is clearly dark, 1 is clearly bright, and 0 keeps the last choice.
-        let zone = luminance.map { $0 < 0.44 ? -1 : ($0 > 0.56 ? 1 : 0) }
-        let fallback: ColorScheme? = luminance.map { $0 < 0.5 ? .dark : .light }
-        let resolved: ColorScheme? = zone == nil ? nil : (zone == -1 ? .dark : (zone == 1 ? .light : (tone ?? fallback)))
+        // -1 is clearly dark, 1 is clearly bright, and 0 keeps the last
+        // choice. A node that starts out in the middle takes the app's appearance.
+        let zone = luminance.map { $0 < 0.42 ? -1 : ($0 > 0.58 ? 1 : 0) }
+        let resolved: ColorScheme? = zone == nil ? nil : (zone == -1 ? .dark : (zone == 1 ? .light : (tone ?? scheme)))
 
         content
             .environment(\.colorScheme, resolved ?? scheme)
             .onChange(of: resolved, initial: true) { _, value in tone = value }
+            .onChange(of: scheme) { _, _ in tone = nil }
     }
 }
 

@@ -9,7 +9,7 @@ struct KeyMenuView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(menu.title)
-                .font(Theme.ui(11.5, .medium))
+                .font(Theme.ui(12, .medium))
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, 10)
                 .padding(.top, 6)
@@ -27,7 +27,7 @@ struct KeyMenuView: View {
 
             if let footer = menu.footer {
                 Text(footer)
-                    .font(Theme.text(11.5))
+                    .font(Theme.text(12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10)
@@ -68,7 +68,8 @@ private struct KeyMenuRow: View {
         .padding(.horizontal, 8)
         .frame(height: 32)
         .background {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            // The row's corner follows the menu's: its radius less the inset.
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.primary.opacity(highlighted && item.isEnabled ? 0.07 : 0))
         }
         .opacity(item.isEnabled ? 1 : 0.4)
@@ -88,7 +89,7 @@ struct AgentPickerView: View {
         VStack(alignment: .leading, spacing: 4) {
             TextField("Select an agent", text: $app.pickerQuery)
                 .textFieldStyle(.plain)
-                .font(Theme.text(13.5))
+                .font(Theme.text(14))
                 .focused($searchFocused)
                 .padding(.horizontal, 10)
                 .frame(height: 34)
@@ -183,9 +184,9 @@ private struct ConfirmDeleteView: View {
         let agent = app.store.agent(agentID)
         VStack(alignment: .leading, spacing: 10) {
             Text("Delete \(agent?.name ?? "this agent")?")
-                .font(Theme.ui(15, .medium))
+                .font(Theme.ui(16, .medium))
             Text("The agent and its conversation go for good. Files it changed stay as they are.")
-                .font(Theme.text(12.5))
+                .font(Theme.text(13))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 16) {
@@ -194,8 +195,8 @@ private struct ConfirmDeleteView: View {
                     app.closeOverlay(animated: true)
                 } label: {
                     HStack(spacing: 5) {
-                        Text("Cancel").font(Theme.ui(12.5, .medium))
-                        Text("esc").font(Theme.mono(10.5, .medium)).foregroundStyle(.tertiary)
+                        Text("Cancel").font(Theme.ui(13, .medium))
+                        Text("esc").font(Theme.mono(11, .medium)).foregroundStyle(.tertiary)
                     }
                     .foregroundStyle(.primary.opacity(0.8))
                     .frame(height: 28)
@@ -205,8 +206,8 @@ private struct ConfirmDeleteView: View {
                     app.confirmDelete(agentID)
                 } label: {
                     HStack(spacing: 6) {
-                        Text("Delete").font(Theme.ui(12.5, .medium))
-                        Text("↩").font(Theme.mono(10.5, .medium)).opacity(0.7)
+                        Text("Delete").font(Theme.ui(13, .medium))
+                        Text("↩").font(Theme.mono(11, .medium)).opacity(0.7)
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 13)
@@ -230,11 +231,11 @@ struct ShortcutsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Shortcuts")
-                .font(Theme.ui(17, .medium))
+                .font(Theme.ui(16, .medium))
 
             ScrollView {
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 270, maximum: 400), spacing: 34, alignment: .top)],
+                    columns: [GridItem(.adaptive(minimum: 290, maximum: 420), spacing: 32, alignment: .top)],
                     alignment: .leading,
                     spacing: 26
                 ) {
@@ -254,9 +255,9 @@ struct ShortcutsView: View {
                                             }
                                         }
                                     }
-                                    .frame(width: 92, alignment: .leading)
+                                    .frame(width: 88, alignment: .leading)
                                     Text(entry.title)
-                                        .font(Theme.text(12.5))
+                                        .font(Theme.text(13))
                                         .fixedSize(horizontal: false, vertical: true)
                                     Spacer(minLength: 0)
                                 }
@@ -269,8 +270,8 @@ struct ShortcutsView: View {
             }
         }
         .padding(28)
-        .frame(maxWidth: 1000, maxHeight: 640)
-        .glassPanel(cornerRadius: 28, frost: max(0.55, app.settings.data.panelFrost))
+        .frame(maxWidth: 1040, maxHeight: 760)
+        .glassPanel(cornerRadius: 28, frost: max(0.8, app.settings.data.panelFrost))
         .padding(40)
     }
 }

@@ -24,7 +24,7 @@ struct ActivityView: View {
 
                 if sections.isEmpty {
                     Text("No activity yet")
-                        .font(Theme.text(12.5))
+                        .font(Theme.text(13))
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity, minHeight: 80)
                 }
@@ -33,7 +33,7 @@ struct ActivityView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         if let prompt = section.prompt {
                             Text(prompt)
-                                .font(Theme.text(12.5, .medium))
+                                .font(Theme.text(13, .medium))
                                 .lineLimit(2)
                                 .foregroundStyle(.primary.opacity(0.85))
                         }
@@ -111,11 +111,11 @@ struct UsageStrip: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text("Context")
-                            .font(Theme.ui(10.5, .medium))
+                            .font(Theme.ui(11, .medium))
                             .foregroundStyle(.tertiary)
                         Spacer()
                         Text("\(Int((usage * 100).rounded()))%")
-                            .font(Theme.mono(10.5, .medium))
+                            .font(Theme.mono(11, .medium))
                             .foregroundStyle(.secondary)
                     }
                     GeometryReader { geometry in
@@ -139,10 +139,10 @@ struct UsageStrip: View {
     private func metric(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(Theme.ui(10.5, .medium))
+                .font(Theme.ui(11, .medium))
                 .foregroundStyle(.tertiary)
             Text(value)
-                .font(Theme.text(12.5, .medium))
+                .font(Theme.text(13, .medium))
                 .lineLimit(1)
         }
     }
@@ -162,7 +162,7 @@ struct SectionLabel: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(Theme.ui(10, .semibold))
+            .font(Theme.ui(11, .semibold))
             .kerning(0.6)
             .foregroundStyle(.tertiary)
     }
@@ -227,8 +227,9 @@ struct DiffView: View {
             .buttonStyle(.pressable)
             .help("Reload the diff")
         }
-        .font(Theme.mono(11.5, .medium))
-        .padding(.horizontal, 16)
+        .font(Theme.mono(12, .medium))
+        .padding(.leading, 20)
+        .padding(.trailing, 12)
         .padding(.vertical, 8)
     }
 
@@ -270,11 +271,11 @@ struct DiffView: View {
                         .foregroundStyle(.tertiary)
                         .rotationEffect(.degrees(isCollapsed ? 0 : 90))
                     Text(kindLabel(file.kind))
-                        .font(Theme.mono(9.5, .bold))
+                        .font(Theme.mono(10, .bold))
                         .foregroundStyle(kindColor(file.kind))
                         .frame(width: 13)
                     Text(file.path)
-                        .font(Theme.mono(11.5, .medium))
+                        .font(Theme.mono(12, .medium))
                         .lineLimit(1)
                         .truncationMode(.head)
                     Spacer(minLength: 6)
@@ -299,7 +300,7 @@ struct DiffView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(file.hunks) { hunk in
                             Text(hunk.header)
-                                .font(Theme.mono(10.5))
+                                .font(Theme.mono(11))
                                 .foregroundStyle(.tertiary)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 4)

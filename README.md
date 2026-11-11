@@ -1,6 +1,6 @@
 # Ostra
 
-Ostra is a native macOS app for running coding agents. Agents sit on a canvas as cards. A Liquid Glass chat box at the bottom of the window talks to the selected agent, and starts a new agent when none is selected.
+Ostra is a native macOS app for running coding agents. Agents sit on a canvas as glass cards. A Liquid Glass chat box at the bottom of the window talks to the selected agent, and starts a new agent when none is selected.
 
 The agents run on [T3 Code](https://github.com/pingdotgg/t3code). Ostra runs a local T3 Code server in the background and draws its own interface on top of it.
 
@@ -49,14 +49,19 @@ You don't have to memorize shortcuts. Press **M** for the menu; every menu shows
 | `S` | Select an agent by name |
 | `D` | Archive the selected agent. Press `Z` to undo. |
 | `M` | Open the menu |
-| `C` | Open the workspace panel: diff, files, terminal, and activity |
+| `R` | Rename the selected agent. Double-clicking a name does the same. |
+| `C` | Open the left panel: diff, files, terminal, and activity |
+| `⌘K` | Search everything: agents, actions, projects, files, and messages |
 | `Tab` | Go to the next agent. `F` changes which agents `Tab` visits. |
 | `Space` | Open or close the chat |
 | `Y` / `N` | Approve or deny what the agent asks for |
-| `[` / `]` | Switch between Chat, Activity, and Diff |
+| `1` – `4` | Switch tabs in the open pane. Each tab shows its key. |
+| `⌘V` | Paste text, images, or files into the message |
 | `\` | Split the chat to show two agents side by side |
 
 To start an agent, deselect everything, type a task in the chat box, and press **Return**. The agent starts in the highlighted project.
+
+To send files or images with a message, paste them, drop them on the window, or click **+** in the chat box. Long pasted text becomes an attachment, so the message stays readable.
 
 To change the canvas background or the glass, press **M**, then **,** for Settings.
 

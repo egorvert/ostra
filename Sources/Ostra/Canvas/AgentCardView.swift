@@ -143,8 +143,8 @@ struct AgentCardAdornment: View {
             StatusDot(phase: agent.phase, unseen: agent.snapshot.hasUnseenResult, size: 11, ringed: true)
                 .offset(x: 5.5 - inset, y: inset - 5.5)
         }
+        .frame(width: size.width, height: size.height, alignment: .topTrailing)
         .adaptiveTone(over: app.toneFrame(forWorld: CanvasLayout.footprintRect(at: agent.position)))
-        .frame(width: size.width, height: size.height)
         .scaleEffect(isDragging ? 1.04 : 1)
         .animation(reduceMotion ? nil : (isDragging ? Motion.snappy : Motion.settle), value: isDragging)
         .position(x: origin.x + agent.position.x, y: origin.y + agent.position.y)

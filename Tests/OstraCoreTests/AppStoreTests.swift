@@ -3,6 +3,9 @@ import Foundation
 import Testing
 @testable import OstraCore
 
+/// Swift Testing has an `Attachment` of its own; these tests mean Ostra's.
+private typealias Attachment = OstraCore.Attachment
+
 @MainActor
 @Suite struct AppStoreTests {
     /// Starts a store on the seeded mock and waits for the first snapshot.
@@ -90,6 +93,39 @@ import Testing
         await waitUntil { agent.phase == .done }
         #expect(agent.changes.files == 2)
         #expect(!agent.conversation.items.isEmpty)
+        await store.shutdown()
+    }
+
+    @Test func attachmentsTravelWithMessages() async {
+        let store = await loadedStore(pace: 0)
+        let image = Attachment(kind: .image, name: "shot.png", mimeType: "image/png", byteCount: 2_048, path: "/tmp/shot.png")
+        let notes = Attachment(kind: .text, name: "Pasted text.txt", mimeType: "text/plain", byteCount: 9_000, path: "/tmp/notes.txt")
+
+        // A new agent can start from attachments alone, with no text.
+        let before = store.agents.count
+        store.spawn(prompt: "", attachments: [image])
+        await waitUntil { store.agents.count == before + 1 && store.selectedAgentID != nil }
+        let agent = store.selectedAgent!
+        await waitUntil { !agent.conversation.items.isEmpty }
+        func sent() -> [[Attachment]] {
+            agent.conversation.items.compactMap { item in
+                if case let .userMessage(_, attachments) = item.content { return attachments }
+                return nil
+            }
+        }
+        #expect(sent().first == [image])
+
+        store.send("And these notes", attachments: [notes], to: agent.id)
+        await waitUntil { sent().contains([notes]) }
+        await store.shutdown()
+    }
+
+    @Test func searchCanLoadEveryConversation() async {
+        let store = await loadedStore(pace: 1)
+        let idle = store.agents.filter { !$0.phase.isActive && $0.id != store.selectedAgentID }
+        #expect(!idle.isEmpty)
+        store.loadsEveryConversation = true
+        await waitUntil { store.agents.allSatisfy(\.conversation.isLoaded) }
         await store.shutdown()
     }
 
