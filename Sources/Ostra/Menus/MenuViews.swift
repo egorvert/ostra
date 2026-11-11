@@ -141,15 +141,23 @@ struct ModalLayer: View {
             case .settings:
                 backdrop
                 SettingsView()
-                    .transition(.scale(scale: 0.97).combined(with: .opacity))
+                    .transition(.sheet)
             case .shortcuts:
                 backdrop
                 ShortcutsView()
-                    .transition(.scale(scale: 0.97).combined(with: .opacity))
+                    .transition(.sheet)
             case let .confirmDelete(id):
                 backdrop
                 ConfirmDeleteView(agentID: id)
-                    .transition(.scale(scale: 0.97).combined(with: .opacity))
+                    .transition(.sheet)
+            case .search:
+                backdrop
+                GeometryReader { geometry in
+                    SearchView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, max(72, geometry.size.height * 0.16))
+                }
+                .hudRegion("search", in: app.hudRegions)
             default:
                 EmptyView()
             }
@@ -194,9 +202,7 @@ private struct ConfirmDeleteView: View {
                 }
                 .buttonStyle(.pressable)
                 Button {
-                    app.closeOverlay()
-                    app.store.delete(agentID)
-                    if app.store.selectedAgentID == nil { app.chatOpen = false }
+                    app.confirmDelete(agentID)
                 } label: {
                     HStack(spacing: 6) {
                         Text("Delete").font(Theme.ui(12.5, .medium))

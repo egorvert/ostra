@@ -63,6 +63,20 @@ enum Overlay: Equatable {
     case confirmDelete(AgentID)
     case settings
     case shortcuts
+    case search
+}
+
+/// An agent's name while the user edits it in place.
+struct RenameState: Equatable {
+    /// Where the editor shows.
+    enum Site {
+        case card
+        case header
+    }
+
+    var agentID: AgentID
+    var site: Site
+    var text: String
 }
 
 /// UI state and behavior that sits between the store and the views:
@@ -82,6 +96,11 @@ final class AppModel {
     var workspaceTool: WorkspaceTool = .diff
     var workspaceWidth: CGFloat = 560
     var statusPaneOpen = false
+    /// True when the last tab change moved to a later tab. The content slides that way.
+    var chatTabForward = true
+    var workspaceToolForward = true
+    /// The file the Files tool shows, per root folder.
+    var fileSelection: [String: String] = [:]
 
     // MARK: Overlays
 
@@ -91,6 +110,18 @@ final class AppModel {
     var menuHighlight = 0
     var pickerQuery = ""
     var pickerHighlight = 0
+    var searchQuery = "" {
+        didSet {
+            guard searchQuery != oldValue else { return }
+            searchHighlight = 0
+            refreshFileMatches()
+        }
+    }
+    var searchHighlight = 0
+    /// Files that match the search text. They arrive a moment after the rest.
+    var searchFileMatches: [FileMatch] = []
+    /// The agent whose name is being edited, if any.
+    var rename: RenameState?
 
     // MARK: Input
 
@@ -98,6 +129,12 @@ final class AppModel {
     var isTyping = false
     /// Unsent text, per agent. The empty key holds the draft for a new agent.
     var drafts: [String: String] = [:]
+    /// Unsent attachments, keyed like `drafts`.
+    var draftAttachments: [String: [Attachment]] = [:]
+    /// True while a drag with files hovers over the window.
+    var isDropTargeted = false
+    /// The conversation row to scroll to, per agent. Search sets it.
+    var scrollTargets: [AgentID: String] = [:]
     /// Text for the diff panes, per agent.
     var diffs: [AgentID: DiffState] = [:]
     /// The height each agent's conversation needs, so the pane can hug short ones.
@@ -110,6 +147,7 @@ final class AppModel {
     var draggingAgentID: AgentID?
 
     @ObservationIgnored private var hintTask: Task<Void, Never>?
+    @ObservationIgnored var fileMatchTask: Task<Void, Never>?
     @ObservationIgnored private var keyMonitor: Any?
     @ObservationIgnored private var scrollMonitor: Any?
     @ObservationIgnored var reduceMotion = false
@@ -144,9 +182,9 @@ final class AppModel {
     func select(_ id: AgentID?, openChat: Bool = false, animated: Bool = true) {
         store.select(id)
         if id == nil {
-            chatOpen = false
+            if chatOpen { Motion.perform(Motion.panelOut) { chatOpen = false } }
         } else if openChat {
-            chatOpen = true
+            self.openChat()
         }
         if let agent = store.agent(id) {
             reveal(agent, animated: animated)
@@ -191,8 +229,9 @@ final class AppModel {
     func canvasTapped() {
         closeOverlay()
         focus.blur()
+        cancelRename()
         if chatOpen {
-            chatOpen = false
+            toggleChat()
         } else {
             store.select(nil)
         }
@@ -207,39 +246,60 @@ final class AppModel {
         set { drafts[draftKey] = newValue }
     }
 
+    /// True when the draft has something to send.
+    var canSend: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+    }
+
     /// Sends the draft: to the selected agent, or as the first prompt of a new agent.
     func submitDraft(queue: Bool = false) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        let files = attachments
+        guard !text.isEmpty || !files.isEmpty else { return }
         if let id = store.selectedAgentID {
-            store.send(text, to: id, queue: queue)
-            chatOpen = true
+            store.send(text, attachments: files, to: id, queue: queue)
+            openChat()
         } else {
             guard store.currentProject != nil else {
                 store.toast(.init(kind: .error, text: "Add a project first: press A, then P."))
                 return
             }
-            store.spawn(prompt: text)
-            chatOpen = true
+            guard store.spawnProvider != nil else {
+                store.toast(.init(kind: .error, text: "No provider is ready. Sign in to Codex or Claude, then try again."))
+                return
+            }
+            store.spawn(prompt: text, attachments: files)
+            openChat()
         }
         draft = ""
+        attachments = []
+    }
+
+    /// Shows the chat pane, with its entrance.
+    func openChat() {
+        guard !chatOpen else { return }
+        Motion.perform(Motion.panel) { chatOpen = true }
     }
 
     func focusInput() {
         closeOverlay()
-        if store.selectedAgentID != nil { chatOpen = true }
+        if store.selectedAgentID != nil { openChat() }
         focus.focusChat()
     }
 
-    func toggleChat(animated: Bool) {
+    /// Opens or closes the chat pane. Panels animate however they're opened.
+    func toggleChat() {
         guard store.selectedAgentID != nil else { return }
-        Motion.perform(chatOpen ? Motion.panelOut : Motion.panel, animated: animated && !reduceMotion) {
+        Motion.perform(chatOpen ? Motion.panelOut : Motion.panel) {
             chatOpen.toggle()
         }
         if !chatOpen { focus.blur() }
     }
 
     func setChatTab(_ tab: ChatTab) {
+        guard tab != chatTab else { return }
+        let tabs = ChatTab.allCases
+        chatTabForward = (tabs.firstIndex(of: tab) ?? 0) > (tabs.firstIndex(of: chatTab) ?? 0)
         chatTab = tab
         if tab == .diff, let id = store.selectedAgentID { loadDiff(for: id) }
     }
@@ -252,8 +312,10 @@ final class AppModel {
         // Pin the current agent and move on to the next one.
         guard let current = store.selectedAgentID, store.agents.count > 1 else { return }
         if store.cycle(forward: true) != nil, store.selectedAgentID != current {
-            store.pin(current)
-            chatOpen = true
+            Motion.perform(Motion.panel) {
+                store.pin(current)
+                chatOpen = true
+            }
         }
     }
 
@@ -261,8 +323,39 @@ final class AppModel {
 
     func archiveSelected() {
         guard let id = store.selectedAgentID else { return }
-        store.archive(id)
-        if store.selectedAgentID == nil { chatOpen = false }
+        archive(id)
+    }
+
+    func archive(_ id: AgentID) {
+        Motion.perform(Motion.snappy) {
+            store.archive(id)
+            if store.selectedAgentID == nil { chatOpen = false }
+        }
+    }
+
+    // MARK: - Rename
+
+    /// Starts editing an agent's name where it shows: on its card, or in the chat header.
+    func beginRename(_ id: AgentID, site: RenameState.Site? = nil) {
+        guard let agent = store.agent(id) else { return }
+        closeOverlay()
+        if store.selectedAgentID != id { select(id) }
+        let site = site ?? (chatOpen ? .header : .card)
+        if site == .card { reveal(agent, animated: true) }
+        rename = RenameState(agentID: id, site: site, text: agent.name)
+    }
+
+    func commitRename() {
+        guard let state = rename else { return }
+        rename = nil
+        store.rename(state.agentID, name: state.text)
+        focus.blur()
+    }
+
+    func cancelRename() {
+        guard rename != nil else { return }
+        rename = nil
+        focus.blur()
     }
 
     func respond(_ decision: ApprovalDecision) {
@@ -295,15 +388,17 @@ final class AppModel {
     /// Prepares the chat box to spawn an agent.
     func beginNewAgent() {
         closeOverlay()
-        store.select(nil)
-        chatOpen = false
+        Motion.perform(Motion.panelOut) {
+            store.select(nil)
+            chatOpen = false
+        }
         focus.focusChat()
     }
 
     // MARK: - Workspace panel
 
-    func toggleWorkspace(animated: Bool) {
-        Motion.perform(workspaceOpen ? Motion.panelOut : Motion.panel, animated: animated && !reduceMotion) {
+    func toggleWorkspace() {
+        Motion.perform(workspaceOpen ? Motion.panelOut : Motion.panel) {
             workspaceOpen.toggle()
         }
         if workspaceOpen, workspaceTool == .diff, let id = store.selectedAgentID {
@@ -312,9 +407,57 @@ final class AppModel {
     }
 
     func setWorkspaceTool(_ tool: WorkspaceTool) {
-        workspaceTool = tool
-        if !workspaceOpen { toggleWorkspace(animated: false) }
+        if tool != workspaceTool {
+            let tools = WorkspaceTool.allCases
+            workspaceToolForward = (tools.firstIndex(of: tool) ?? 0) > (tools.firstIndex(of: workspaceTool) ?? 0)
+            // A panel that's closed opens on the tool; there's nothing to slide from.
+            if workspaceOpen {
+                workspaceTool = tool
+            } else {
+                Motion.instantly { workspaceTool = tool }
+            }
+        }
+        if !workspaceOpen { toggleWorkspace() }
         if tool == .diff, let id = store.selectedAgentID { loadDiff(for: id) }
+    }
+
+    func toggleStatusPane() {
+        Motion.perform(statusPaneOpen ? Motion.panelOut : Motion.panel) {
+            statusPaneOpen.toggle()
+        }
+    }
+
+    // MARK: - Number keys
+
+    /// The pane whose tabs the plain number keys switch: the chat pane while
+    /// it's open, and the left panel otherwise.
+    enum DigitPane {
+        case chat
+        case workspace
+    }
+
+    var digitPane: DigitPane? {
+        if chatOpen, store.selectedAgentID != nil { return .chat }
+        if workspaceOpen { return .workspace }
+        return store.selectedAgentID == nil ? nil : .chat
+    }
+
+    /// True while the selected agent's question owns the number keys.
+    private var questionTakesDigits: Bool {
+        store.selectedAgent?.phase == .awaitingInput
+    }
+
+    /// The key that selects a chat tab, for the hint beside its label.
+    func hint(for tab: ChatTab) -> String? {
+        guard !questionTakesDigits, let index = ChatTab.allCases.firstIndex(of: tab) else { return nil }
+        return "\(index + 1)"
+    }
+
+    /// The key that selects a tool in the left panel.
+    func hint(for tool: WorkspaceTool) -> String? {
+        guard let index = WorkspaceTool.allCases.firstIndex(of: tool) else { return nil }
+        let plain = digitPane == .workspace && !questionTakesDigits
+        return plain ? "\(index + 1)" : "⌘\(index + 1)"
     }
 
     // MARK: - Diffs
@@ -352,17 +495,27 @@ final class AppModel {
     // MARK: - Overlays
 
     func open(_ overlay: Overlay, animated: Bool) {
-        Motion.perform(Motion.popIn, animated: animated && !reduceMotion) {
+        let isSheet = overlay == .settings || overlay == .shortcuts
+        // Sheets always animate. Menus and search open at once from a key,
+        // because they open hundreds of times a day.
+        Motion.perform(isSheet ? Motion.sheet : Motion.popIn, animated: animated || isSheet) {
             menuHighlight = 0
             pickerHighlight = 0
             pickerQuery = ""
+            if overlay == .search {
+                searchQuery = ""
+                searchHighlight = 0
+                prepareSearch()
+            }
             self.overlay = overlay
         }
     }
 
     func closeOverlay(animated: Bool = false) {
         guard overlay != .none else { return }
-        Motion.perform(Motion.popOut, animated: animated && !reduceMotion) {
+        let isSheet = overlay == .settings || overlay == .shortcuts
+        if overlay == .search { store.loadsEveryConversation = false }
+        Motion.perform(isSheet ? Motion.sheetOut : Motion.popOut, animated: animated || isSheet) {
             overlay = .none
         }
     }

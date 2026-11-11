@@ -68,7 +68,7 @@ extension AppModel {
             item("a", "See agents") { [self] in open(.picker, animated: false) },
             item("s", "Status pane", checked: statusPaneOpen) { [self] in
                 closeOverlay()
-                statusPaneOpen.toggle()
+                toggleStatusPane()
             },
             item("n", "New") { [self] in open(.menu(.add), animated: false) },
             item("w", "Other shortcuts") { [self] in open(.shortcuts, animated: true) },

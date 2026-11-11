@@ -27,17 +27,17 @@ public struct CameraState: Codable, Hashable, Sendable {
 /// Geometry rules for the canvas, in world points. Agent positions are card centers.
 public enum CanvasLayout {
     /// The agent card.
-    public static let cardSize = CGSize(width: 208, height: 66)
+    public static let cardSize = CGSize(width: 208, height: 64)
     /// What must not overlap. Today that's the card itself.
-    public static let footprint = CGSize(width: 208, height: 66)
-    /// The grid that new agents snap to.
-    public static let cell = CGSize(width: 240, height: 98)
-    public static let groupInsetTop: CGFloat = 46
-    public static let groupInsetSide: CGFloat = 26
-    public static let groupInsetBottom: CGFloat = 26
+    public static let footprint = CGSize(width: 208, height: 64)
+    /// The grid that new agents snap to. It leaves 24 points between cards.
+    public static let cell = CGSize(width: 232, height: 88)
+    public static let groupInsetTop: CGFloat = 48
+    public static let groupInsetSide: CGFloat = 24
+    public static let groupInsetBottom: CGFloat = 24
     public static let groupGap: CGFloat = 96
     /// The size of a project's group while it has no agents.
-    public static let emptyGroupSize = CGSize(width: 260, height: 138)
+    public static let emptyGroupSize = CGSize(width: 256, height: 136)
 
     /// The rectangle a card covers.
     public static func footprintRect(at position: CGPoint) -> CGRect {

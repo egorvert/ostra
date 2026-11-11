@@ -38,7 +38,21 @@ struct CanvasView: View {
                 camera.y -= value.translation.height / start.zoom
                 Motion.instantly { app.store.camera = camera }
             }
-            .onEnded { _ in panStart = nil }
+            .onEnded { value in
+                guard let start = panStart else { return }
+                panStart = nil
+                // A flick keeps going: the canvas coasts to where the drag
+                // was heading, then eases to a stop.
+                let coast = CGSize(
+                    width: value.predictedEndTranslation.width - value.translation.width,
+                    height: value.predictedEndTranslation.height - value.translation.height
+                )
+                guard hypot(coast.width, coast.height) > 24, !Motion.reduced else { return }
+                var camera = app.store.camera
+                camera.x -= coast.width / start.zoom
+                camera.y -= coast.height / start.zoom
+                withAnimation(Motion.coast) { app.store.camera = camera }
+            }
     }
 }
 
@@ -52,11 +66,29 @@ private struct WorldLayer: View {
             ZStack {
                 ForEach(app.store.projects) { project in
                     ProjectGroupView(project: project, origin: origin)
+                        .transition(AnyTransition(Materialize(scale: 0.97)))
+                }
+                // Cards share one glass container, so two that come close
+                // pull together like drops. The regions stay outside it, or
+                // every card would melt into its own group.
+                GlassEffectContainer(spacing: 10) {
+                    ZStack {
+                        ForEach(app.store.agents) { agent in
+                            AgentCardView(agent: agent, origin: origin)
+                                .transition(.asymmetric(
+                                    insertion: AnyTransition(Materialize(scale: 0.92)),
+                                    removal: AnyTransition(Materialize(scale: 0.96))
+                                ))
+                        }
+                    }
                 }
                 ForEach(app.store.agents) { agent in
-                    AgentCardView(agent: agent, origin: origin)
+                    AgentCardAdornment(agent: agent, origin: origin)
+                        .transition(.opacity)
                 }
             }
+            .animation(Motion.reduced ? nil : Motion.settle, value: app.store.agents.map(\.id))
+            .animation(Motion.reduced ? nil : Motion.settle, value: app.store.projects.map(\.id))
         }
     }
 }

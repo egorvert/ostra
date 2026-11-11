@@ -15,9 +15,15 @@ extension AppModel {
         max(260, viewSize.height - 64 - Theme.hudMargin)
     }
 
-    /// The dock grew or shrank. The canvas stays where it is: panels float
-    /// over it, and the selected agent is a highlight, not a destination.
-    func dockFrameChanged() {}
+    /// The window rectangle whose brightness decides a node's ink, or nil
+    /// when ink follows the app's appearance.
+    func toneFrame(forWorld rect: CGRect) -> CGRect? {
+        guard settings.data.adaptiveInk else { return nil }
+        // A plain canvas is one color everywhere, so the camera doesn't matter.
+        guard settings.data.canvasStyle == .image else { return CGRect(x: 0, y: 0, width: 1, height: 1) }
+        let origin = screenPoint(rect.origin)
+        return CGRect(x: origin.x, y: origin.y, width: rect.width * zoom, height: rect.height * zoom)
+    }
 
     func screenPoint(_ world: CGPoint) -> CGPoint {
         CGPoint(

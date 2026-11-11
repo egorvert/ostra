@@ -111,8 +111,8 @@ struct SettingsView: View {
                             Slider(value: $settings.data.panelFrost, in: 0...1)
                                 .frame(width: 280)
                         }
-                        row("Agent cards") {
-                            Toggle("Use glass", isOn: $settings.data.glassCards)
+                        row("Agents and projects", note: "Picks dark or light text from the canvas behind each one.") {
+                            Toggle("Adapt text to the background", isOn: $settings.data.adaptiveInk)
                                 .toggleStyle(.switch)
                                 .controlSize(.small)
                         }

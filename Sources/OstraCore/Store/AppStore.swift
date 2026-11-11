@@ -29,6 +29,12 @@ public final class AppStore {
     /// Where new agents spawn.
     public var currentProjectID: ProjectID? { didSet { schedulePersist() } }
     public var cycleFilter: CycleFilter = .all { didSet { schedulePersist() } }
+    /// True while search needs every agent's conversation, not only the ones in view.
+    public var loadsEveryConversation = false {
+        didSet {
+            if loadsEveryConversation != oldValue { refreshConversations() }
+        }
+    }
 
     // MARK: Spawn defaults
 
@@ -613,7 +619,7 @@ public final class AppStore {
         if let selectedAgentID { wanted.insert(selectedAgentID) }
         if let pinnedAgentID { wanted.insert(pinnedAgentID) }
         wanted.formUnion(recentSelections)
-        for agent in agents where agent.phase.isActive {
+        for agent in agents where agent.phase.isActive || loadsEveryConversation {
             wanted.insert(agent.id)
         }
         wanted = wanted.filter { index[$0] != nil }

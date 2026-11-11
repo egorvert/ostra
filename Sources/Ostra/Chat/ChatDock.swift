@@ -11,39 +11,42 @@ struct ChatDock: View {
     var availableWidth: CGFloat
 
     @Environment(AppModel.self) private var app
-    @State private var inputHeight: CGFloat = 46
+    @State private var inputHeight: CGFloat = 92
     @State private var requestHeight: CGFloat = 0
     /// False for a moment after the agent changes, so a new agent's pane
     /// appears at its size instead of growing into it.
     @State private var heightAnimates = true
+    /// The agent the dock showed on its last pass.
+    @State private var shownAgentID: AgentID?
 
     var body: some View {
         let agent = app.store.selectedAgent
         let pinned = app.store.pinnedAgent
         let showPane = app.chatOpen && agent != nil
         let hasRequest = agent?.snapshot.pendingRequest != nil
+        let gap = Theme.dockGap
         // The pane gives up height when a request bar needs room, so the dock
-        // never grows into the band where the selected card sits.
+        // never grows past the top of the window.
         let tallest = max(170, min(
             app.chatPaneHeight,
-            app.dockMaxHeight - inputHeight - 10 - (hasRequest ? requestHeight + 10 : 0)
+            app.dockMaxHeight - inputHeight - gap - (hasRequest ? requestHeight + gap : 0)
         ))
         // A short conversation gets a short pane; the pane grows with it.
         let paneHeight = min(tallest, max(wantedHeight(agent, tab: app.chatTab), wantedHeight(pinned, tab: .chat)))
         let split = showPane && pinned != nil
         let columnWidth = split
-            ? min(Theme.chatWidth, max(Theme.chatMinWidth, (availableWidth - 10) / 2))
+            ? min(Theme.chatWidth, max(Theme.chatMinWidth, (availableWidth - gap) / 2))
             : min(Theme.chatWidth, availableWidth)
-        let width = split ? min(columnWidth * 2 + 10, availableWidth) : columnWidth
+        let width = split ? min(columnWidth * 2 + gap, availableWidth) : columnWidth
 
-        GlassEffectContainer(spacing: 10) {
-            VStack(spacing: 10) {
+        GlassEffectContainer(spacing: gap) {
+            VStack(spacing: gap) {
                 if showPane, let agent {
-                    HStack(spacing: 10) {
+                    HStack(spacing: gap) {
                         ChatPane(agent: agent)
                         if let pinned {
                             ChatPane(agent: pinned, isPinned: true)
-                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                                .transition(.slide(from: .trailing))
                         }
                     }
                     .frame(height: paneHeight)
@@ -67,15 +70,21 @@ struct ChatDock: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { inputHeight = $0 }
             }
             .frame(width: width)
+            // A request that arrives while you watch slides in. Switching to
+            // an agent that already has one shows it at once.
+            .animation(
+                shownAgentID == agent?.id ? Motion.snappy : nil,
+                value: agent?.snapshot.pendingRequest?.id
+            )
         }
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in
             app.hudRegions.set("chat", frame)
-            app.dockFrameChanged()
         }
         .onDisappear { app.hudRegions.set("chat", nil) }
-        .onChange(of: app.store.selectedAgentID) { _, _ in
+        .onChange(of: app.store.selectedAgentID, initial: true) { _, id in
+            shownAgentID = id
             heightAnimates = false
             Task {
                 try? await Task.sleep(for: .milliseconds(320))
@@ -89,18 +98,18 @@ struct ChatDock: View {
         guard let agent else { return 0 }
         // Activity and Diff are reference views, so they take the full height.
         guard tab == .chat else { return .infinity }
-        let header: CGFloat = 45
+        let header = Theme.headerHeight + 1
         guard agent.conversation.isLoaded, let content = app.conversationHeights[agent.id] else {
-            return header + 130
+            return header + 132
         }
-        return header + max(content, 110)
+        return header + max(content, 112)
     }
 }
 
 /// The chat box.
 ///
-/// At rest it's one quiet line. With the keyboard, it grows a footer: what the
-/// message goes to on the left, and one button on the right that sends, or
+/// It always has the same form: the text on top, and a footer with the
+/// attach button, what the message goes to, and one button that sends, or
 /// stops the agent while it runs. With no agent selected, the message starts
 /// a new agent, and the footer chooses its project, model, and permissions.
 struct PromptInput: View {
@@ -110,58 +119,59 @@ struct PromptInput: View {
     var body: some View {
         @Bindable var app = app
         let agent = app.store.selectedAgent
-        let expanded = app.isTyping || canSend
+        let attachments = app.attachments
+        let shape = RoundedRectangle(cornerRadius: Theme.inputRadius, style: .continuous)
 
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .bottom, spacing: 10) {
-                ZStack(alignment: .topLeading) {
-                    if app.draft.isEmpty {
-                        Text(placeholder(agent))
-                            .font(Theme.text(14))
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                            .allowsHitTesting(false)
-                    }
-                    ChatTextView(
-                        text: $app.draft,
-                        height: $height,
-                        font: Fonts.nsSans(14),
-                        onSubmit: { app.submitDraft() },
-                        onFocusChange: { focused in
-                            Motion.instantly { app.isTyping = focused }
-                        },
-                        register: { app.focus.chatInput = $0 }
-                    )
-                    .frame(height: height)
-                }
-                .padding(.vertical, 5)
-
-                if !expanded {
-                    restingControl(agent)
-                        .frame(width: 28, height: 28)
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            if !attachments.isEmpty {
+                AttachmentTray(attachments: attachments)
+                    .transition(AnyTransition(Materialize(scale: 0.96, anchor: .bottomLeading)))
             }
 
-            if expanded {
-                HStack(spacing: 14) {
-                    tools(agent)
-                    Spacer(minLength: 8)
-                    submitButton(agent)
+            ZStack(alignment: .topLeading) {
+                if app.draft.isEmpty {
+                    Text(app.isDropTargeted ? "Drop to attach" : placeholder(agent))
+                        .font(Theme.text(14))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .allowsHitTesting(false)
                 }
-                .frame(height: 28)
+                ChatTextView(
+                    text: $app.draft,
+                    height: $height,
+                    font: Fonts.nsSans(14),
+                    onSubmit: { app.submitDraft() },
+                    onFocusChange: { focused in
+                        Motion.instantly { app.isTyping = focused }
+                    },
+                    onPaste: { app.attachFromPasteboard() },
+                    register: { app.focus.chatInput = $0 }
+                )
+                .frame(height: height)
             }
+
+            HStack(spacing: 16) {
+                attachButton
+                tools(agent)
+                Spacer(minLength: 8)
+                submitButton(agent)
+            }
+            .frame(height: 28)
         }
         .padding(.leading, 20)
-        .padding(.trailing, expanded ? 10 : 9)
-        .padding(.top, 9)
-        .padding(.bottom, expanded ? 10 : 9)
+        .padding(.trailing, 10)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
         .glassPanel(cornerRadius: Theme.inputRadius, frost: app.settings.data.chatFrost * 0.85)
-        .contentShape(RoundedRectangle(cornerRadius: Theme.inputRadius, style: .continuous))
+        .overlay {
+            if app.isDropTargeted {
+                shape.strokeBorder(Theme.accent, lineWidth: 2)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Motion.hover, value: app.isDropTargeted)
+        .contentShape(shape)
         .onTapGesture { app.focusInput() }
-    }
-
-    private var canSend: Bool {
-        !app.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func placeholder(_ agent: AgentModel?) -> String {
@@ -169,91 +179,82 @@ struct PromptInput: View {
             return agent.phase == .awaitingInput ? "Answer \(agent.name)" : "Message \(agent.name)"
         }
         if let project = app.store.currentProject { return "New agent in \(project.title)" }
-        return "Press A to add a project"
+        return "Add a project to start an agent"
     }
 
-    /// While the box is at rest: stop if the agent runs, else a hint that Return starts typing.
-    @ViewBuilder
-    private func restingControl(_ agent: AgentModel?) -> some View {
-        if let agent, agent.phase.isActive {
-            stopButton(agent)
-        } else {
-            Image(systemName: "return")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.quaternary)
-                .help("Press Return to type")
-        }
-    }
-
-    @ViewBuilder
-    private func submitButton(_ agent: AgentModel?) -> some View {
-        if !canSend, let agent, agent.phase.isActive {
-            stopButton(agent)
-        } else {
-            Button {
-                app.submitDraft()
-            } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(canSend ? AnyShapeStyle(.white) : AnyShapeStyle(.tertiary))
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(canSend ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Color.primary.opacity(0.06))))
-            }
-            .buttonStyle(.pressable)
-            .disabled(!canSend)
-            .help("Send (↩)")
-        }
-    }
-
-    private func stopButton(_ agent: AgentModel) -> some View {
+    private var attachButton: some View {
         Button {
-            app.store.interrupt(agent.id)
+            app.chooseAttachments()
         } label: {
-            Image(systemName: "stop.fill")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.primary.opacity(0.75))
-                .frame(width: 28, height: 28)
-                .background(Circle().fill(Color.primary.opacity(0.08)))
+            Image(systemName: "plus")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 16, height: 28, alignment: .leading)
+                .contentShape(Rectangle().inset(by: -6))
         }
         .buttonStyle(.pressable)
-        .help("Stop \(agent.name) (X)")
+        .help("Attach files or images (⌘U). Paste works too.")
     }
 
-    /// What the message goes to: the agent's model and permissions, or the
-    /// project, model, and permissions for a new agent.
+    /// One button, two jobs: it stops a running agent while there's nothing
+    /// to send, and sends otherwise.
+    private func submitButton(_ agent: AgentModel?) -> some View {
+        let canSend = app.canSend
+        let stops = !canSend && agent?.phase.isActive == true
+        return Button {
+            if stops, let agent {
+                app.store.interrupt(agent.id)
+            } else {
+                app.submitDraft()
+            }
+        } label: {
+            Image(systemName: stops ? "stop.fill" : "arrow.up")
+                .font(.system(size: stops ? 9 : 12, weight: .bold))
+                .contentTransition(.symbolEffect(.replace))
+                .foregroundStyle(canSend ? AnyShapeStyle(.white) : AnyShapeStyle(stops ? .secondary : .tertiary))
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(canSend ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Color.primary.opacity(stops ? 0.09 : 0.06))))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.pressable)
+        .disabled(!canSend && !stops)
+        .animation(Motion.hover, value: canSend)
+        .animation(Motion.hover, value: stops)
+        .help(stops ? "Stop \(agent?.name ?? "the agent") (X)" : "Send (↩)")
+    }
+
+    /// What the message goes to. The three places stay put: project, model,
+    /// permissions. A new agent chooses all three; a running one has its
+    /// project and model settled.
     @ViewBuilder
     private func tools(_ agent: AgentModel?) -> some View {
         let store = app.store
         if let agent {
-            Text(modelName(agent))
-                .font(Theme.ui(12))
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
+            fixedLabel(store.project(agent.projectID)?.title ?? "Project")
+            fixedLabel(modelName(agent))
             Menu {
                 ForEach(RuntimeMode.allCases) { mode in
-                    Button {
-                        store.setRuntimeMode(mode, for: agent.id)
-                    } label: {
-                        if agent.snapshot.runtimeMode == mode {
-                            Label(mode.label, systemImage: "checkmark")
-                        } else {
-                            Text(mode.label)
-                        }
-                    }
+                    Toggle(mode.label, isOn: Binding(
+                        get: { agent.snapshot.runtimeMode == mode },
+                        set: { if $0 { store.setRuntimeMode(mode, for: agent.id) } }
+                    ))
                 }
             } label: {
-                toolLabel(agent.snapshot.runtimeMode.label)
+                menuLabel(agent.snapshot.runtimeMode.label)
             }
             .modifier(QuietMenu())
         } else {
             Menu {
                 ForEach(store.projects) { project in
-                    Button(project.title) { store.currentProjectID = project.id }
+                    Toggle(project.title, isOn: Binding(
+                        get: { store.currentProject?.id == project.id },
+                        set: { if $0 { store.currentProjectID = project.id } }
+                    ))
                 }
                 if !store.projects.isEmpty { Divider() }
                 Button("Add Folder…") { app.addProjectFromPanel() }
             } label: {
-                toolLabel(store.currentProject?.title ?? "Add project")
+                menuLabel(store.currentProject?.title ?? "Add project")
             }
             .modifier(QuietMenu())
 
@@ -261,24 +262,31 @@ struct PromptInput: View {
                 ForEach(store.providers.filter(\.isReady)) { provider in
                     Section(provider.name) {
                         ForEach(provider.models) { model in
-                            Button(model.name) {
-                                store.spawnProviderID = provider.id
-                                store.spawnModelID = model.id
-                            }
+                            Toggle(model.name, isOn: Binding(
+                                get: { store.spawnProvider?.id == provider.id && store.spawnModel?.id == model.id },
+                                set: {
+                                    guard $0 else { return }
+                                    store.spawnProviderID = provider.id
+                                    store.spawnModelID = model.id
+                                }
+                            ))
                         }
                     }
                 }
             } label: {
-                toolLabel(store.spawnModel?.name ?? "No model")
+                menuLabel(store.spawnModel?.name ?? "No model")
             }
             .modifier(QuietMenu())
 
             Menu {
                 ForEach(RuntimeMode.allCases) { mode in
-                    Button(mode.label) { store.spawnMode = mode }
+                    Toggle(mode.label, isOn: Binding(
+                        get: { store.spawnMode == mode },
+                        set: { if $0 { store.spawnMode = mode } }
+                    ))
                 }
             } label: {
-                toolLabel(store.spawnMode.label)
+                menuLabel(store.spawnMode.label)
             }
             .modifier(QuietMenu())
         }
@@ -289,7 +297,16 @@ struct PromptInput: View {
             ?? agent.snapshot.model
     }
 
-    private func toolLabel(_ title: String) -> some View {
+    /// A setting that can't change anymore.
+    private func fixedLabel(_ title: String) -> some View {
+        Text(title)
+            .font(Theme.ui(12))
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+    }
+
+    /// A setting that opens a menu.
+    private func menuLabel(_ title: String) -> some View {
         HStack(spacing: 4) {
             Text(title)
                 .font(Theme.ui(12))
@@ -299,6 +316,7 @@ struct PromptInput: View {
                 .opacity(0.7)
         }
         .foregroundStyle(.secondary)
+        .frame(height: 28)
         .contentShape(Rectangle())
     }
 }

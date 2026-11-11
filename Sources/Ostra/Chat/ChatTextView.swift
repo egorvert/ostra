@@ -13,6 +13,9 @@ struct ChatTextView: NSViewRepresentable {
     var maxLines = 9
     var onSubmit: () -> Void
     var onFocusChange: (Bool) -> Void
+    /// Offers the pasteboard to the app first. Returns true when the app took
+    /// it as attachments, and false to paste plain text.
+    var onPaste: () -> Bool = { false }
     /// Hands the text view to the focus coordinator.
     var register: (NSTextView) -> Void
 
@@ -47,6 +50,11 @@ struct ChatTextView: NSViewRepresentable {
         textView.focusChanged = { [weak coordinator = context.coordinator] focused in
             coordinator?.parent.onFocusChange(focused)
         }
+        textView.pasteAttachments = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.onPaste() ?? false
+        }
+        // Drops belong to the window, which turns files into attachments.
+        textView.unregisterDraggedTypes()
         textView.string = text
         scroll.documentView = textView
         register(textView)
@@ -105,6 +113,18 @@ struct ChatTextView: NSViewRepresentable {
 /// A text view that reports when it gains and loses the keyboard.
 final class FocusReportingTextView: NSTextView {
     var focusChanged: ((Bool) -> Void)?
+    var pasteAttachments: (() -> Bool)?
+
+    /// Files, images, and long text become attachments. Everything else
+    /// pastes as plain text, so no foreign fonts or colors come along.
+    override func paste(_ sender: Any?) {
+        if pasteAttachments?() == true { return }
+        pasteAsPlainText(sender)
+    }
+
+    override func updateDragTypeRegistration() {
+        unregisterDraggedTypes()
+    }
 
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()

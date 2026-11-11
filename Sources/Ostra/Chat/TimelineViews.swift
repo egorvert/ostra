@@ -97,6 +97,8 @@ struct ChatTimeline: View {
     @Environment(AppModel.self) private var app
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var atBottom = true
+    /// The row search jumped to, while its highlight shows.
+    @State private var flashed: String?
 
     var body: some View {
         let conversation = agent.conversation
@@ -107,7 +109,17 @@ struct ChatTimeline: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                     ChatRowView(row: row, agent: agent, isLatestReply: row.id == lastAssistant)
+                        .background {
+                            // A row that search jumped to glows for a moment.
+                            if flashed == row.id {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Theme.accent.opacity(0.10))
+                                    .padding(-8)
+                                    .transition(.opacity)
+                            }
+                        }
                         .padding(.top, index == 0 ? 0 : row.topSpacing)
+                        .id(row.id)
                 }
                 if agent.phase.isRunning, !endsWithLiveOutput(rows) {
                     Shimmer(text: agent.phase == .starting ? "Starting" : "Thinking")
@@ -119,6 +131,7 @@ struct ChatTimeline: View {
             .padding(.top, 20)
             .padding(.bottom, 22)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .scrollTargetLayout()
             .onGeometryChange(for: CGFloat.self) { $0.size.height.rounded() } action: { height in
                 app.conversationHeights[agent.id] = height
             }
@@ -134,6 +147,11 @@ struct ChatTimeline: View {
         .onChange(of: conversation.revision) { _, _ in
             // Follow new output only while the reader is at the end.
             if atBottom { position.scrollTo(edge: .bottom) }
+        }
+        .onChange(of: app.scrollTargets[agent.id], initial: true) { _, target in
+            guard let target else { return }
+            app.scrollTargets[agent.id] = nil
+            jump(to: target)
         }
         .overlay {
             if rows.isEmpty, !agent.phase.isRunning {
@@ -159,6 +177,18 @@ struct ChatTimeline: View {
             }
         }
         .animation(Motion.easeOut(0.16), value: atBottom)
+    }
+
+    /// Brings a row to the middle of the pane and marks it for a moment.
+    private func jump(to row: String) {
+        Task {
+            // Give a pane that just opened one pass to lay out its rows.
+            try? await Task.sleep(for: .milliseconds(60))
+            position.scrollTo(id: row, anchor: .center)
+            withAnimation(Motion.hover) { flashed = row }
+            try? await Task.sleep(for: .seconds(1.4))
+            withAnimation(Motion.easeOut(0.5)) { flashed = nil }
+        }
     }
 
     private func endsWithLiveOutput(_ rows: [ChatRow]) -> Bool {
@@ -197,22 +227,30 @@ struct ChatRowView: View {
 
     var body: some View {
         switch row {
-        case let .user(_, text, _):
-            HStack(alignment: .bottom, spacing: 6) {
-                Spacer(minLength: 48)
-                CopyButton(text: text)
-                    .opacity(hovering ? 1 : 0)
-                Text(text)
-                    .font(Theme.text(14))
-                    .lineSpacing(3.5)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background {
-                        RoundedRectangle(cornerRadius: 17, style: .continuous)
-                            .fill(Color.primary.opacity(scheme == .dark ? 0.11 : 0.055))
+        case let .user(_, text, attachments):
+            VStack(alignment: .trailing, spacing: 6) {
+                if !attachments.isEmpty {
+                    MessageAttachments(attachments: attachments)
+                }
+                if !text.isEmpty {
+                    HStack(alignment: .bottom, spacing: 6) {
+                        Spacer(minLength: 48)
+                        CopyButton(text: text)
+                            .opacity(hovering ? 1 : 0)
+                        Text(text)
+                            .font(Theme.text(14))
+                            .lineSpacing(4)
+                            .textSelection(.enabled)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
+                            .background {
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .fill(Color.primary.opacity(scheme == .dark ? 0.11 : 0.055))
+                            }
                     }
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
             .onHover { hovering = $0 }
             .animation(Motion.hover, value: hovering)
 

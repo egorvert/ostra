@@ -16,8 +16,14 @@ struct WorkspacePanel: View {
         VStack(spacing: 0) {
             header(agent)
             Hairline()
-            content(agent)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ZStack {
+                content(agent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .id(app.workspaceTool)
+                    .transition(.swap(forward: app.workspaceToolForward))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipShape(Rectangle())
         }
         .glassPanel(cornerRadius: Theme.panelRadius, frost: app.settings.data.chatFrost)
         .overlay(alignment: .trailing) { resizeHandle }
@@ -26,9 +32,12 @@ struct WorkspacePanel: View {
 
     private func header(_ agent: AgentModel?) -> some View {
         HStack(spacing: 10) {
-            TextTabs(items: WorkspaceTool.allCases, selection: app.workspaceTool, label: \.label) {
-                app.setWorkspaceTool($0)
-            }
+            TextTabs(
+                items: WorkspaceTool.allCases,
+                selection: app.workspaceTool,
+                label: \.label,
+                hint: { app.hint(for: $0) }
+            ) { app.setWorkspaceTool($0) }
             Spacer(minLength: 6)
             if let agent {
                 HStack(spacing: 7) {
@@ -39,11 +48,11 @@ struct WorkspacePanel: View {
                         .lineLimit(1)
                 }
             }
-            QuietIconButton(symbol: "xmark", help: "Close (C)") { app.toggleWorkspace(animated: true) }
+            QuietIconButton(symbol: "xmark", help: "Close (C)") { app.toggleWorkspace() }
         }
-        .padding(.leading, 18)
-        .padding(.trailing, 10)
-        .frame(height: 44)
+        .padding(.leading, 11)
+        .padding(.trailing, 9)
+        .frame(height: Theme.headerHeight)
     }
 
     @ViewBuilder
@@ -115,11 +124,13 @@ struct WorkspacePanel: View {
 /// A lazily loaded file tree with a read-only viewer underneath.
 struct FilesView: View {
     let root: String
+    @Environment(AppModel.self) private var app
     @State private var tree = FileTree()
-    @State private var selected: String?
 
     var body: some View {
         let rows = tree.rows(root: root)
+        // The selection lives in the app model, so search can open a file here.
+        let selected = app.fileSelection[root]
         VStack(spacing: 0) {
             if rows.isEmpty {
                 Text("No files in this folder")
@@ -135,7 +146,7 @@ struct FilesView: View {
                                 if row.isDirectory {
                                     withAnimation(Motion.snappy) { tree.toggle(row.path) }
                                 } else {
-                                    selected = row.path
+                                    app.fileSelection[root] = row.path
                                 }
                             }
                     }
@@ -147,7 +158,7 @@ struct FilesView: View {
 
             if let selected {
                 Hairline()
-                FileViewer(path: selected, root: root) { self.selected = nil }
+                FileViewer(path: selected, root: root) { app.fileSelection[root] = nil }
                     .id(selected)
                     .frame(maxHeight: .infinity)
             }

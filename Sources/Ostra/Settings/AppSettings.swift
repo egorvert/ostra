@@ -61,8 +61,8 @@ struct SettingsData: Codable, Equatable {
     var chatFrost: Double = 0.5
     /// The frost for menus and smaller panels.
     var panelFrost: Double = 0.3
-    /// True when agent cards use glass. Cards are content, so the default is a plain card.
-    var glassCards: Bool = false
+    /// True when agents and projects pick dark or light ink from the canvas behind them.
+    var adaptiveInk: Bool = true
 
     init() {}
 
@@ -78,7 +78,7 @@ struct SettingsData: Codable, Equatable {
         imageBlur = try container.decodeIfPresent(Double.self, forKey: .imageBlur) ?? defaults.imageBlur
         chatFrost = try container.decodeIfPresent(Double.self, forKey: .chatFrost) ?? defaults.chatFrost
         panelFrost = try container.decodeIfPresent(Double.self, forKey: .panelFrost) ?? defaults.panelFrost
-        glassCards = try container.decodeIfPresent(Bool.self, forKey: .glassCards) ?? defaults.glassCards
+        adaptiveInk = try container.decodeIfPresent(Bool.self, forKey: .adaptiveInk) ?? defaults.adaptiveInk
     }
 }
 

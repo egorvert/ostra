@@ -91,28 +91,57 @@ struct Keycap: View {
     }
 }
 
-/// A row of text tabs: the chosen one is ink, the rest recede.
+/// A row of tabs. A soft pill sits behind the chosen one and slides to the
+/// next when the choice changes.
+///
+/// Every label keeps one weight, so nothing shifts sideways as the pill moves.
 struct TextTabs<Item: Hashable>: View {
     var items: [Item]
     var selection: Item
     var label: (Item) -> String
+    /// The key that selects an item, shown before its label.
+    var hint: (Item) -> String? = { _ in nil }
     var onSelect: (Item) -> Void
 
+    @Namespace private var namespace
+    @State private var hovered: Item?
+
     var body: some View {
-        HStack(spacing: 15) {
+        HStack(spacing: 2) {
             ForEach(items, id: \.self) { item in
+                let isSelected = item == selection
                 Button {
-                    onSelect(item)
+                    Motion.perform(Motion.tabContent) { onSelect(item) }
                 } label: {
-                    Text(label(item))
-                        .font(Theme.ui(12, item == selection ? .medium : .regular))
-                        .foregroundStyle(item == selection ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
-                        .frame(height: 26)
-                        .contentShape(Rectangle())
+                    HStack(spacing: 5) {
+                        if let key = hint(item) {
+                            Text(key)
+                                .font(Theme.mono(10, .medium))
+                                .foregroundStyle(.tertiary)
+                        }
+                        Text(label(item))
+                            .font(Theme.ui(12, .medium))
+                            .foregroundStyle(
+                                isSelected || hovered == item ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)
+                            )
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(height: 26)
+                    .background {
+                        if isSelected {
+                            Capsule(style: .continuous)
+                                .fill(Color.primary.opacity(0.08))
+                                .matchedGeometryEffect(id: "pill", in: namespace)
+                        }
+                    }
+                    .contentShape(Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .onHover { hovered = $0 ? item : (hovered == item ? nil : hovered) }
             }
         }
+        .animation(Motion.tab, value: selection)
+        .animation(Motion.hover, value: hovered)
     }
 }
 

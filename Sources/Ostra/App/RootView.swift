@@ -16,6 +16,11 @@ struct RootView: View {
         .preferredColorScheme(app.settings.data.appearance.colorScheme)
         .onChange(of: reduceMotion, initial: true) { _, value in
             app.reduceMotion = value
+            Motion.reduced = value
+        }
+        // Files and images dropped anywhere in the window join the draft.
+        .onDrop(of: [.fileURL, .image, .plainText], isTargeted: dropTargeted) { providers in
+            app.handleDrop(providers)
         }
         .onAppear {
             // Start in command mode: AppKit would otherwise hand the keyboard
@@ -24,6 +29,10 @@ struct RootView: View {
         }
         .onChange(of: app.store.hasLoaded, initial: true) { _, _ in frameContentOnce() }
         .onChange(of: app.viewSize) { _, _ in frameContentOnce() }
+    }
+
+    private var dropTargeted: Binding<Bool> {
+        Binding(get: { app.isDropTargeted }, set: { app.isDropTargeted = $0 })
     }
 
     /// On a fresh install the camera has no saved position, so show everything.

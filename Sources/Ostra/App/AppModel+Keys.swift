@@ -19,6 +19,16 @@ extension AppModel {
 
     /// Applies the keymap to a press, whatever produced it.
     func route(_ press: KeyPress) -> Bool {
+        // An open name editor takes every key but Esc. Return reaches the
+        // field, which commits.
+        if rename != nil {
+            if press.key == .escape {
+                cancelRename()
+                return true
+            }
+            return false
+        }
+
         if press.command { return handleCommandShortcut(press) }
 
         if press.control, press.key == .tab {
@@ -31,13 +41,13 @@ extension AppModel {
             return handleMenuKey(press, menu: id)
         case .picker:
             return handlePickerKey(press)
+        case .search:
+            return handleSearchKey(press)
         case let .confirmDelete(id):
             if press.key == .enter || press.isCharacter("y") {
-                closeOverlay()
-                store.delete(id)
-                if store.selectedAgentID == nil { chatOpen = false }
+                confirmDelete(id)
             } else if press.key == .escape || press.isCharacter("n") {
-                closeOverlay()
+                closeOverlay(animated: true)
             }
             return true
         case .settings, .shortcuts:
@@ -81,7 +91,13 @@ extension AppModel {
         case .character(","):
             open(.settings, animated: true)
         case .character("k"):
-            toggleMenu(.main, animated: false)
+            toggleSearch()
+        case .character("v"):
+            // The chat box pastes for itself while it has the keyboard.
+            guard !focus.isEditingText else { return false }
+            pasteIntoDraft()
+        case .character("u"):
+            chooseAttachments()
         case .character("/"), .character("?"):
             open(.shortcuts, animated: true)
         case .character("n"):
@@ -97,7 +113,7 @@ extension AppModel {
         case .character("-"):
             zoomStep(0.8)
         case .character("j"):
-            toggleWorkspace(animated: true)
+            toggleWorkspace()
         case .character("["):
             stepChatTab(-1)
         case .character("]"):
@@ -105,7 +121,7 @@ extension AppModel {
         case .character("w"):
             // Close the chat before the window.
             guard chatOpen else { return false }
-            toggleChat(animated: true)
+            toggleChat()
         case .character("z"):
             guard !focus.isEditingText else { return false }
             return store.performToastAction()
@@ -120,7 +136,7 @@ extension AppModel {
             respond(.decline)
         case let .character(digit) where ("1"..."4").contains(digit):
             let tools = WorkspaceTool.allCases
-            setWorkspaceTool(tools[Int(String(digit))! - 1])
+            Motion.perform(Motion.tabContent) { setWorkspaceTool(tools[Int(String(digit))! - 1]) }
         default:
             return false
         }
@@ -135,11 +151,11 @@ extension AppModel {
         switch press.key {
         case .escape:
             if chatOpen {
-                toggleChat(animated: false)
+                toggleChat()
             } else if workspaceOpen {
-                toggleWorkspace(animated: false)
+                toggleWorkspace()
             } else if statusPaneOpen {
-                statusPaneOpen = false
+                toggleStatusPane()
             } else {
                 store.select(nil)
             }
@@ -149,7 +165,7 @@ extension AppModel {
             if store.selectedAgentID == nil {
                 focusInput()
             } else {
-                toggleChat(animated: false)
+                toggleChat()
             }
         case .tab:
             cycle(forward: !press.shift)
@@ -195,7 +211,13 @@ extension AppModel {
         case "m":
             toggleMenu(.main, animated: false)
         case "c":
-            toggleWorkspace(animated: false)
+            toggleWorkspace()
+        case "r":
+            guard let id = store.selectedAgentID else {
+                store.toast(.init(text: "Select an agent first"))
+                return true
+            }
+            beginRename(id)
         case "i":
             focusInput()
         case "f":
@@ -224,10 +246,20 @@ extension AppModel {
             zoomStep(1.25)
         case "-":
             zoomStep(0.8)
-        case "1", "2", "3":
-            guard store.selectedAgentID != nil else { return true }
-            chatOpen = true
-            setChatTab(ChatTab.allCases[Int(String(character))! - 1])
+        case "1", "2", "3", "4":
+            // Number keys switch tabs in the pane that has them: the chat
+            // pane while it's open, the left panel otherwise.
+            let index = Int(String(character))! - 1
+            switch digitPane {
+            case .chat:
+                guard ChatTab.allCases.indices.contains(index) else { return true }
+                openChat()
+                Motion.perform(Motion.tabContent) { setChatTab(ChatTab.allCases[index]) }
+            case .workspace:
+                Motion.perform(Motion.tabContent) { setWorkspaceTool(WorkspaceTool.allCases[index]) }
+            case nil:
+                break
+            }
         case "[":
             stepChatTab(-1)
         case "]":
@@ -237,7 +269,7 @@ extension AppModel {
         case "|":
             store.swapPinned()
         case "t":
-            statusPaneOpen.toggle()
+            toggleStatusPane()
         case "?", "/":
             open(.shortcuts, animated: false)
         case ",":
@@ -249,12 +281,23 @@ extension AppModel {
         return true
     }
 
+    /// Deletes an agent for good, after the user confirmed.
+    func confirmDelete(_ id: AgentID) {
+        closeOverlay(animated: true)
+        Motion.perform(Motion.snappy) {
+            store.delete(id)
+            if store.selectedAgentID == nil { chatOpen = false }
+        }
+    }
+
     func stepChatTab(_ delta: Int) {
         guard store.selectedAgentID != nil else { return }
         let tabs = ChatTab.allCases
         let current = tabs.firstIndex(of: chatTab) ?? 0
-        chatOpen = true
-        setChatTab(tabs[(current + delta + tabs.count) % tabs.count])
+        openChat()
+        Motion.perform(Motion.tabContent) {
+            setChatTab(tabs[(current + delta + tabs.count) % tabs.count])
+        }
     }
 
     // MARK: - Menus

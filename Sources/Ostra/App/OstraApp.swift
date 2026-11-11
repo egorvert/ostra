@@ -79,6 +79,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         installSignalHandlers()
         Runtime.model.start()
+        let staging = AttachmentStaging.directory
+        Task.detached(priority: .background) { AttachmentStaging.prune(in: staging) }
         if let script = Runtime.options.script {
             DebugScript(model: Runtime.model).run(script)
         }
@@ -166,6 +168,20 @@ final class DebugScript {
                     model.draft = argument.replacingOccurrences(of: "_", with: " ")
                 case "query":
                     model.pickerQuery = argument.replacingOccurrences(of: "_", with: " ")
+                case "search":
+                    model.searchQuery = argument.replacingOccurrences(of: "_", with: " ")
+                case "attach":
+                    model.attach(urls: [URL(fileURLWithPath: argument)])
+                case "attachtext":
+                    model.attach(text: String(repeating: argument.replacingOccurrences(of: "_", with: " ") + "\n", count: 400))
+                case "rename":
+                    if let id = model.store.selectedAgentID {
+                        model.beginRename(id, site: argument == "header" ? .header : .card)
+                    }
+                case "ink":
+                    model.settings.data.adaptiveInk = argument != "off"
+                case "canvas":
+                    model.settings.data.canvasColor = argument.isEmpty ? nil : "#" + argument
                 case "project":
                     model.store.addProject(path: argument)
                 case "model":
