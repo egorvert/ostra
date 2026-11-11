@@ -136,6 +136,135 @@ struct LiveIntegrationTests {
         #expect(codex, "codex isn't reachable from the resolved PATH")
     }
 
+    /// Starts and stops the engine twice without running an agent, so it costs nothing.
+    @Test(.timeLimit(.minutes(3)))
+    func keepsItsCredentialsAcrossRestarts() async throws {
+        let support = try Self.makeTemporaryDirectory("restart")
+        defer { try? FileManager.default.removeItem(at: support) }
+        let tokenFile = support.appendingPathComponent("session-token")
+
+        func runOnce() async throws -> (token: String, states: [ConnectionState]) {
+            let backend = T3Backend(configuration: T3Configuration(supportDirectory: support))
+            let recorder = Recorder()
+            let events = Task {
+                for await event in backend.events() { await recorder.apply(event) }
+            }
+            defer { events.cancel() }
+            await backend.start()
+            do {
+                try await waitUntil("the engine to become ready", timeout: .seconds(90)) {
+                    await recorder.connection == .ready
+                }
+            } catch {
+                await backend.shutdown()
+                throw error
+            }
+            let token = try String(contentsOf: tokenFile, encoding: .utf8)
+            let permissions = try FileManager.default.attributesOfItem(atPath: tokenFile.path)[.posixPermissions] as? NSNumber
+            #expect(permissions?.int16Value == 0o600)
+            await backend.shutdown()
+            try await waitUntil("the idle state", timeout: .seconds(5)) { await recorder.connection == .idle }
+            return (token, await recorder.connectionHistory)
+        }
+
+        let first = try await runOnce()
+        #expect(first.states == [.idle, .starting, .connecting, .ready, .idle])
+        #expect(!first.token.isEmpty)
+
+        // The second launch reuses the cached token.
+        let second = try await runOnce()
+        #expect(second.token == first.token)
+
+        // A token the server doesn't know gets replaced without failing the launch.
+        try Data("not-a-real-token".utf8).write(to: tokenFile)
+        let third = try await runOnce()
+        #expect(third.token != "not-a-real-token")
+        #expect(third.token != first.token)
+        #expect(!third.states.contains { state in
+            if case .failed = state { true } else { false }
+        })
+    }
+
+    /// Asks the agent to ask a question, then answers it. Whether the model
+    /// uses its question tool is up to the model, so this test only runs when
+    /// `OSTRA_T3_LIVE_QUESTION=1` is also set.
+    @Test(
+        .enabled(if: ProcessInfo.processInfo.environment["OSTRA_T3_LIVE_QUESTION"] == "1"),
+        .timeLimit(.minutes(4))
+    )
+    func answersAQuestion() async throws {
+        let support = try Self.makeTemporaryDirectory("question")
+        let repository = try Self.makeTemporaryDirectory("question-repo")
+        defer {
+            try? FileManager.default.removeItem(at: support)
+            try? FileManager.default.removeItem(at: repository)
+        }
+        let backend = T3Backend(configuration: T3Configuration(supportDirectory: support))
+        let recorder = Recorder()
+        let events = Task {
+            for await event in backend.events() { await recorder.apply(event) }
+        }
+        defer { events.cancel() }
+        await backend.start()
+        do {
+            try await waitUntil("Codex to become ready", timeout: .seconds(120)) {
+                await recorder.providers.first { $0.id == "codex" }?.isReady == true
+            }
+            let project = try await backend.addProject(path: repository.path, title: nil)
+            let agentID = try await backend.launchAgent(
+                LaunchRequest(
+                    projectID: project.id,
+                    prompt: "Before anything else, use your request_user_input tool to ask me exactly one multiple-choice question: which color I prefer, with the options Red and Blue. After I answer, reply with only the color I chose.",
+                    providerID: "codex",
+                    model: "gpt-5.6-luna",
+                    runtimeMode: .fullAccess,
+                    interactionMode: .plan
+                )
+            )
+            let conversation = Task {
+                for await event in backend.conversation(for: agentID) { await recorder.apply(event) }
+            }
+            defer { conversation.cancel() }
+
+            try await waitUntil("a question or the end of the run", timeout: .seconds(120)) {
+                let agent = await recorder.agents[agentID]
+                return agent?.phase == .awaitingInput || agent?.phase == .done || agent?.phase == .failed
+            }
+            let agent = try #require(await recorder.agents[agentID])
+            print("LIVE question phase: \(agent.phase)")
+            guard agent.phase == .awaitingInput else {
+                print("LIVE question: the model didn't ask. Timeline:\n" + (await recorder.sortedTimeline).map(describe).joined(separator: "\n"))
+                await backend.shutdown()
+                return
+            }
+            try await waitUntil("the question's details", timeout: .seconds(10)) {
+                await recorder.agents[agentID]?.pendingRequest?.questions.isEmpty == false
+            }
+            let request = try #require(await recorder.agents[agentID]?.pendingRequest)
+            print("LIVE question request: \(request)")
+            #expect(request.kind == .userInput)
+            let question = try #require(request.questions.first)
+            let choice = question.choices.first { $0.label.lowercased().contains("blue") }?.label ?? "Blue"
+            try await backend.answer(request: request.id, of: agentID, answers: [question.id: choice])
+            try await waitUntil("the run to finish", timeout: .seconds(120)) {
+                let phase = await recorder.agents[agentID]?.phase
+                return phase == .done || phase == .failed
+            }
+            let timeline = await recorder.sortedTimeline
+            print("LIVE question timeline:\n" + timeline.map(describe).joined(separator: "\n"))
+            let record = timeline.compactMap { item -> QuestionRecord? in
+                if case .question(let record) = item.content { record } else { nil }
+            }.first
+            print("LIVE question record: \(String(describing: record))")
+            #expect(record?.answers[question.id]?.lowercased().contains("blue") == true)
+            #expect(await recorder.agents[agentID]?.phase == .done)
+        } catch {
+            await backend.shutdown()
+            throw error
+        }
+        await backend.shutdown()
+    }
+
     @Test(.timeLimit(.minutes(6)))
     func runsAnAgentEndToEnd() async throws {
         let support = try Self.makeTemporaryDirectory("support")
