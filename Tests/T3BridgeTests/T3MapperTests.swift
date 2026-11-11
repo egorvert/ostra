@@ -403,6 +403,9 @@ import Testing
     @Test func noticesKeepTheirLevel() {
         #expect(content(item("system_notice", ["message": "Switched model"])) == .notice(text: "Switched model", level: .info))
         #expect(content(item("run_interrupt_result", ["message": "Stopped by you"])) == .notice(text: "Stopped by you", level: .warning))
+        // A stop request shows only while the stop is in flight.
+        #expect(content(item("run_interrupt_request", ["message": "Stopped by you"], status: "running")) == .notice(text: "Stopping…", level: .info))
+        #expect(content(item("run_interrupt_request", ["message": "Stopped by you"])) == nil)
         #expect(
             content(item("error", ["failure": ["class": "usage_limit", "message": "Usage limit reached", "code": nil, "retryable": false]]))
                 == .notice(text: "Usage limit reached", level: .error)

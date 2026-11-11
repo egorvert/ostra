@@ -14,6 +14,8 @@ private actor Recorder {
     var timeline: [String: TimelineItem] = [:]
     var meta = ConversationMeta()
     var resets = 0
+    /// Per assistant row: the text length and streaming flag of each update, in order.
+    var assistantUpdates: [String: [(length: Int, streaming: Bool)]] = [:]
 
     func apply(_ event: BackendEvent) {
         switch event {
@@ -45,6 +47,9 @@ private actor Recorder {
             resets += 1
         case .upsert(let item):
             timeline[item.id] = item
+            if case .assistantMessage(let text, let streaming) = item.content {
+                assistantUpdates[item.id, default: []].append((text.count, streaming))
+            }
         case .remove(let id):
             timeline[id] = nil
         case .meta(let newMeta):
@@ -114,6 +119,21 @@ struct LiveIntegrationTests {
             timeout: .seconds(30)
         )
         try result.requireSuccess("git \(arguments.joined(separator: " "))")
+    }
+
+    /// An app that Finder launches has a bare `PATH`. The server's `PATH` must
+    /// still reach the provider CLIs.
+    @Test(.timeLimit(.minutes(1)))
+    func resolvesToolDirectoriesFromABarePath() async throws {
+        let path = await ServerSupervisor.resolvePath(current: "/usr/bin:/bin")
+        let entries = path.split(separator: ":").map(String.init)
+        print("LIVE resolved PATH has \(entries.count) entries")
+        #expect(entries.contains("/usr/bin"))
+        #expect(entries.contains("/opt/homebrew/bin"))
+        #expect(entries.contains("\(NSHomeDirectory())/.local/bin"))
+        #expect(Set(entries).count == entries.count)
+        let codex = entries.contains { FileManager.default.isExecutableFile(atPath: "\($0)/codex") }
+        #expect(codex, "codex isn't reachable from the resolved PATH")
     }
 
     @Test(.timeLimit(.minutes(6)))
@@ -248,7 +268,11 @@ struct LiveIntegrationTests {
 
             // A follow-up message starts a second run on the idle thread.
             try await backend.setRuntimeMode(.fullAccess, for: agentID)
-            try await backend.sendMessage("Reply with the single word: pong", to: agentID, delivery: .automatic)
+            try await backend.sendMessage(
+                "Reply with the numbers 1 to 80, one per line, and then the single word: pong. Don't run any tools.",
+                to: agentID,
+                delivery: .automatic
+            )
             try await waitUntil("the second run to start", timeout: .seconds(30)) {
                 await recorder.agents[agentID]?.phase.isActive == true
             }
@@ -258,17 +282,83 @@ struct LiveIntegrationTests {
             }
             let secondTimeline = await recorder.sortedTimeline
             print("LIVE timeline after follow-up:\n" + secondTimeline.map(describe).joined(separator: "\n"))
+            // Shows whether assistant text grows over several updates or lands whole.
+            for (id, updates) in await recorder.assistantUpdates {
+                let trace = updates.map { "\($0.length)\($0.streaming ? "s" : "")" }.joined(separator: " ")
+                print("LIVE assistant updates \(id.suffix(12)): \(trace)")
+            }
             #expect(await recorder.agents[agentID]?.phase == .done)
             #expect(await recorder.agents[agentID]?.runtimeMode == .fullAccess)
             #expect(secondTimeline.contains { item in
                 if case .assistantMessage(let text, _) = item.content { text.lowercased().contains("pong") } else { false }
             })
 
-            // Metadata and lifecycle commands.
+            // Stop interrupts a run that's in the middle of a command.
+            try await backend.sendMessage(
+                "Run the shell command `sleep 45` and then reply with the single word: finished",
+                to: agentID,
+                delivery: .automatic
+            )
+            try await waitUntil("the sleep command to start", timeout: .seconds(60)) {
+                await recorder.sortedTimeline.contains { item in
+                    if case .command(let call) = item.content { call.command.contains("sleep 45") && item.status == .running } else { false }
+                }
+            }
+            #expect(await recorder.agents[agentID]?.phase == .working)
+            try await backend.interrupt(agentID)
+            try await waitUntil("the run to stop", timeout: .seconds(30)) {
+                await recorder.agents[agentID]?.phase.isActive == false
+            }
+            print("LIVE phase after interrupt: \(String(describing: await recorder.agents[agentID]?.phase))")
+            print("LIVE timeline after interrupt:\n" + (await recorder.sortedTimeline).suffix(5).map(describe).joined(separator: "\n"))
+            #expect(await recorder.agents[agentID]?.phase == .interrupted)
+
+            // Metadata.
             try await backend.rename(agentID, title: "Renamed by the live test")
             try await waitUntil("the rename", timeout: .seconds(10)) {
                 await recorder.agents[agentID]?.title == "Renamed by the live test"
             }
+
+            // A second backend on the same support directory attaches to the running server.
+            let firstRecord = try JSONValue.parse(Data(contentsOf: support.appendingPathComponent("server.json")))
+            let firstPID = Int32(try #require(firstRecord.int("pid")))
+            let second = T3Backend(configuration: T3Configuration(supportDirectory: support))
+            let secondRecorder = Recorder()
+            let secondEvents = Task {
+                for await event in second.events() { await secondRecorder.apply(event) }
+            }
+            await second.start()
+            try await waitUntil("the second backend to attach", timeout: .seconds(30)) {
+                await secondRecorder.connection == .ready
+            }
+            #expect(await secondRecorder.agents[agentID]?.title == "Renamed by the live test")
+            let attachedRecord = try JSONValue.parse(Data(contentsOf: support.appendingPathComponent("server.json")))
+            #expect(attachedRecord.int("pid").map(Int32.init) == firstPID, "the second backend spawned its own server")
+
+            // Shutting the second backend down stops the shared server. The first
+            // backend notices, starts a new server, and resubscribes.
+            let resetsBefore = await recorder.resets
+            secondEvents.cancel()
+            await second.shutdown()
+            #expect(!ServerSupervisor.isT3Process(firstPID))
+            try await waitUntil("the first backend to notice the loss", timeout: .seconds(30)) {
+                await recorder.connectionHistory.contains { state in
+                    if case .reconnecting = state { true } else { false }
+                }
+            }
+            try await waitUntil("the first backend to reconnect", timeout: .seconds(90)) {
+                await recorder.connection == .ready
+            }
+            let newRecord = try JSONValue.parse(Data(contentsOf: support.appendingPathComponent("server.json")))
+            #expect(newRecord.int("pid").map(Int32.init) != firstPID)
+            #expect(await recorder.agents[agentID]?.title == "Renamed by the live test")
+            try await waitUntil("the conversation to reset after the reconnect", timeout: .seconds(30)) {
+                await recorder.resets > resetsBefore
+            }
+            #expect(await recorder.sortedTimeline.count >= secondTimeline.count)
+            print("LIVE connection history after reconnect: \(await recorder.connectionHistory)")
+
+            // Lifecycle commands.
             try await backend.archive(agentID)
             try await waitUntil("the archive", timeout: .seconds(10)) {
                 await recorder.agents[agentID]?.isArchived == true
@@ -277,6 +367,13 @@ struct LiveIntegrationTests {
             try await waitUntil("the unarchive", timeout: .seconds(10)) {
                 await recorder.agents[agentID]?.isArchived == false
             }
+            // An archive that another client made arrives as a bare removal; the
+            // bridge looks the thread up to tell it from a delete.
+            try await backend.engine.dispatch(T3Commands.archive(threadID: agentID.rawValue))
+            try await waitUntil("the foreign archive", timeout: .seconds(10)) {
+                await recorder.agents[agentID]?.isArchived == true
+            }
+            #expect(await !recorder.removedAgents.contains(agentID))
             try await backend.delete(agentID)
             try await waitUntil("the delete", timeout: .seconds(10)) {
                 await recorder.removedAgents.contains(agentID)

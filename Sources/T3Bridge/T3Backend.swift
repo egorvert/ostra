@@ -8,7 +8,7 @@ import OstraCore
 /// the server's JSON WebSocket RPC. The app sees only the `AgentBackend`
 /// protocol.
 public final class T3Backend: AgentBackend {
-    private let engine: T3Engine
+    let engine: T3Engine
 
     public init(configuration: T3Configuration = .init()) {
         engine = T3Engine(configuration: configuration)

@@ -253,13 +253,22 @@ private func tag(_ item: TimelineItem) -> String {
         _ = projection.apply(streamItem: event(3, "turn-item.updated", item("r", type: "run_interrupt_result", run: "run-4", ordinal: 9)))
         #expect(projection.timeline.isEmpty)
 
-        // A stop-then-steer pairs the result with a request: both show.
-        let changes = projection.apply(streamItem: event(4, "turn-item.updated", item("req", type: "run_interrupt_request", run: "run-4", ordinal: 8)))
+        // A stop-then-steer pairs the result with a request: the result shows.
+        let request = item("req", type: "run_interrupt_request", run: "run-4", ordinal: 8, extra: ["status": "running"])
+        let changes = projection.apply(streamItem: event(4, "turn-item.updated", request))
         #expect(changes.contains { change in
             if case .upsert(let row) = change { row.id == "req" } else { false }
         })
         _ = projection.apply(streamItem: event(5, "turn-item.updated", item("r", type: "run_interrupt_result", run: "run-4", ordinal: 9)))
         #expect(projection.timeline.map(\.id) == ["req", "r"])
+
+        // Once the stop lands, the request row gives way to the result.
+        let settled = item("req", type: "run_interrupt_request", run: "run-4", ordinal: 8)
+        let removal = projection.apply(streamItem: event(6, "turn-item.updated", settled))
+        #expect(removal.contains { change in
+            if case .remove(let id) = change { id == "req" } else { false }
+        })
+        #expect(projection.timeline.map(\.id) == ["r"])
     }
 
     @Test func unchangedItemsProduceNoEvents() {

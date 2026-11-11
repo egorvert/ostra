@@ -389,7 +389,12 @@ enum T3Mapper {
         case "system_notice":
             return notice(item.string("message"), level: .info)
         case "run_interrupt_request":
-            return notice(item.string("message"), level: .info)
+            // The request matters while the stop is in flight. Once the run
+            // stops, the interrupt result says the same thing.
+            switch item.string("status") {
+            case "completed", "cancelled", "interrupted", "failed": return nil
+            default: return notice("Stopping…", level: .info)
+            }
         case "run_interrupt_result":
             return notice(item.string("message"), level: .warning)
         case "error":

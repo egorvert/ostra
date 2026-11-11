@@ -26,6 +26,8 @@ actor T3Engine {
         var held = false
         var upstream: Task<Void, Never>?
         var generation = 0
+        /// Seconds to wait before subscribing again after the upstream ends.
+        var retryDelay: Double = 2
         // Buffered changes. A burst of updates to one item collapses to its latest state.
         var pendingChanges: [String: Change] = [:]
         var pendingOrder: [String] = []
@@ -276,12 +278,13 @@ actor T3Engine {
             return
         }
         let revision = threadRevisions[id, default: 0]
-        subscriptionTasks.append(
-            Task { [weak self] in
-                let titles = try? await connection.call(T3Method.threadTitles, ["threadIds": [.string(id)]])
-                await self?.finishRemoval(of: id, revision: revision, stillExists: titles?[id] != nil)
+        Task { [weak self] in
+            // Without an answer, keep the thread: a later snapshot settles it.
+            guard let titles = try? await connection.call(T3Method.threadTitles, ["threadIds": [.string(id)]]) else {
+                return
             }
-        )
+            await self?.finishRemoval(of: id, revision: revision, stillExists: titles[id] != nil)
+        }
     }
 
     private func finishRemoval(of id: String, revision: Int, stillExists: Bool) {
@@ -343,12 +346,10 @@ actor T3Engine {
 
     /// The shell stream leaves archived threads out. One query fills them in.
     private func loadArchive(from connection: RPCConnection) {
-        subscriptionTasks.append(
-            Task { [weak self] in
-                guard let archive = try? await connection.call(T3Method.archivedShellSnapshot, [:]) else { return }
-                await self?.applyArchive(archive)
-            }
-        )
+        Task { [weak self] in
+            guard let archive = try? await connection.call(T3Method.archivedShellSnapshot, [:]) else { return }
+            await self?.applyArchive(archive)
+        }
     }
 
     private func applyArchive(_ archive: JSONValue) {
@@ -514,25 +515,32 @@ actor T3Engine {
         guard hubs[threadID]?.generation == generation else { return }
         hubs[threadID]?.upstream = nil
         // The stream ended while the socket is alive, for example because the
-        // thread was deleted. Retry after a pause if anyone still listens.
-        try? await Task.sleep(for: .seconds(2))
+        // thread was deleted. Retry with a growing pause while anyone listens.
+        let delay = hubs[threadID]?.retryDelay ?? 2
+        hubs[threadID]?.retryDelay = min(delay * 2, 30)
+        try? await Task.sleep(for: .seconds(delay))
         guard hubs[threadID]?.generation == generation, connection != nil else { return }
         startUpstream(for: threadID)
     }
 
     private func handleThreadItem(_ item: JSONValue, thread threadID: String, generation: Int) {
-        guard var hub = hubs[threadID], hub.generation == generation else { return }
+        // Take the hub out of the dictionary while it changes. A copy left in
+        // the dictionary would force the projection to copy its storage on
+        // every event.
+        guard hubs[threadID]?.generation == generation, var hub = hubs.removeValue(forKey: threadID) else { return }
+        var hasChanges = false
         switch item.string("kind") {
         case "snapshot":
             hub.projection.load(snapshot: item)
+            hub.retryDelay = 2
             hub.pendingChanges.removeAll()
             hub.pendingOrder.removeAll()
             hub.pendingMeta = nil
             let reset = ConversationEvent.reset(items: hub.projection.timeline, meta: hub.projection.meta)
             for consumer in hub.consumers.values { consumer.yield(reset) }
-            hubs[threadID] = hub
         case "event":
             let changes = hub.projection.apply(streamItem: item)
+            hasChanges = !changes.isEmpty
             for change in changes {
                 switch change {
                 case .upsert(let timelineItem):
@@ -547,11 +555,12 @@ actor T3Engine {
                     break
                 }
             }
-            hubs[threadID] = hub
-            if !changes.isEmpty { scheduleFlush(threadID) }
         default:
+            hubs[threadID] = hub
             return
         }
+        hubs[threadID] = hub
+        if hasChanges { scheduleFlush(threadID) }
         updatePendingDetail(for: threadID)
     }
 
@@ -572,7 +581,7 @@ actor T3Engine {
     }
 
     private func flush(_ threadID: String) {
-        guard var hub = hubs[threadID] else { return }
+        guard var hub = hubs.removeValue(forKey: threadID) else { return }
         hub.flushScheduled = false
         hub.lastFlush = .now
         var events: [ConversationEvent] = []
@@ -669,6 +678,16 @@ actor T3Engine {
             expectedArchives.remove(threadID)
             throw error
         }
+        // The removal follows within moments. Drop the note after that, so a
+        // later delete of the same thread isn't mistaken for this archive.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(10))
+            await self?.forgetExpectedArchive(threadID)
+        }
+    }
+
+    private func forgetExpectedArchive(_ threadID: String) {
+        expectedArchives.remove(threadID)
     }
 
     func answer(request: RequestID, thread threadID: String, answers: [String: String]) async throws {

@@ -89,13 +89,28 @@ actor ServerSupervisor {
         }
         endpoint = nil
 
-        if let attached = await attachToRecordedServer() {
-            endpoint = attached
-            return attached
+        // A server that's shutting down still holds the data directory for a
+        // moment. Retry until it lets go or starts answering again.
+        for attempt in 0..<8 {
+            if let attached = await attachToRecordedServer() {
+                endpoint = attached
+                return attached
+            }
+            do {
+                let spawned = try await spawn(binary: binary)
+                endpoint = spawned
+                return spawned
+            } catch SpawnError.dataDirectoryOwned {
+                if attempt == 7 { break }
+                try await Task.sleep(for: .milliseconds(500))
+            }
         }
-        let spawned = try await spawn(binary: binary)
-        endpoint = spawned
-        return spawned
+        throw BackendError("Another T3 Code server holds Ostra's engine data and doesn't answer. Quit it, then try again.")
+    }
+
+    private enum SpawnError: Error {
+        /// Another server owns the data directory.
+        case dataDirectoryOwned
     }
 
     /// Stops the managed server. Sends `SIGTERM`, then `SIGKILL` if the server lingers.
@@ -231,9 +246,7 @@ actor ServerSupervisor {
             if let status = childExitStatus {
                 child = nil
                 managedPID = nil
-                if status == Self.exitStatusStateDirectoryOwned, let attached = await attachToRecordedServer() {
-                    return attached
-                }
+                if status == Self.exitStatusStateDirectoryOwned { throw SpawnError.dataDirectoryOwned }
                 throw BackendError("The T3 Code engine exited during startup (status \(status)). \(logTail())")
             }
             try await Task.sleep(for: .milliseconds(100))
