@@ -95,6 +95,16 @@ To check the interface after a change, script the app and capture its window:
 Scripts/snapshot.sh /tmp/shots "wait:2.6 key:tab key:space wait:1.5" chat:4.5
 ```
 
+## Share a build
+
+To give someone a copy to try, build a disk image:
+
+```bash
+Scripts/dmg.sh
+```
+
+The script writes `dist/Ostra-<version>.dmg`, with the app, a link to Applications, and a note on installing. The app is signed ad hoc and isn't notarized, so macOS asks each person to confirm the first launch in **System Settings** > **Privacy & Security**. It runs on Macs with Apple silicon and macOS 26 or later.
+
 ## Credits
 
 - [T3 Code](https://github.com/pingdotgg/t3code), MIT License

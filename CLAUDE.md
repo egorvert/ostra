@@ -7,7 +7,7 @@ A native macOS coding-agent harness: agents on a canvas, a Liquid Glass HUD, and
 - `Sources/OstraCore`: models, the `AgentBackend` protocol, `AppStore` (state, selection, layout, persistence), parsers (`UnifiedDiff`, `Markdown`), and `MockBackend`. No UI imports.
 - `Sources/T3Bridge`: `T3Backend`. Installs the pinned T3 Code release, supervises `t3 serve`, authenticates, and maps the server's Effect RPC stream to OstraCore types.
 - `Sources/Ostra`: the SwiftUI app. `App/` holds `AppModel` (UI state, the key router, menus, the camera) and `Keymap` (every shortcut). `Canvas/`, `HUD/`, `Chat/`, `Menus/`, `Workspace/` (the code panel), `Settings/`, and `Design/` hold views.
-- `Scripts/`: `bundle.sh` builds `dist/Ostra.app`; `snapshot.sh` scripts the app and captures its window.
+- `Scripts/`: `bundle.sh` builds `dist/Ostra.app`; `dmg.sh` packs it into a disk image to share; `snapshot.sh` scripts the app and captures its window.
 
 ## Rules that keep the design intact
 
