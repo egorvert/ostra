@@ -52,7 +52,7 @@ extension AppModel {
         if overlay == .search {
             closeOverlay()
         } else {
-            open(.search, animated: false)
+            open(.search, animated: true)
         }
     }
 
@@ -362,7 +362,7 @@ extension AppModel {
         for (index, tool) in WorkspaceTool.allCases.enumerated() {
             actions.append(Action(
                 id: "tool-\(tool.rawValue)", title: "Show \(tool.label.lowercased())", subtitle: "Code panel",
-                symbol: tool.symbol, keys: ["⌥⌘\(index + 1)"], keywords: ["workspace", "panel", tool.label]
+                symbol: tool.symbol, keys: ["⌥\(index + 1)"], keywords: ["workspace", "panel", tool.label]
             ) { [self] in
                 Motion.perform(Motion.tabContent) { setWorkspaceTool(tool) }
             })

@@ -25,7 +25,8 @@ mkdir -p "$OUT"
 swift build --product Ostra >/dev/null
 BIN="$(swift build --show-bin-path)/Ostra"
 LISTER="$OUT/.winlist"
-[ -x "$LISTER" ] || swiftc -O -o "$LISTER" Scripts/winlist.swift
+# Rebuild the lister when its source is newer, so an old copy never lingers.
+[ -x "$LISTER" -a "$LISTER" -nt Scripts/winlist.swift ] || swiftc -O -o "$LISTER" Scripts/winlist.swift
 
 if [[ -z "${OSTRA_LIVE:-}" ]]; then
   export OSTRA_DEMO=1
@@ -33,17 +34,18 @@ if [[ -z "${OSTRA_LIVE:-}" ]]; then
 fi
 OSTRA_SCRIPT="$STEPS" "$BIN" >"$OUT/app.log" 2>&1 &
 PID=$!
+# Stop the app however the script ends, so a failed capture leaves nothing running.
+trap 'kill -TERM $PID 2>/dev/null || true; wait $PID 2>/dev/null || true' EXIT
 START=$(date +%s.%N)
 for spec in "$@"; do
   name=${spec%%:*}; at=${spec##*:}
   delay=$(( at - ($(date +%s.%N) - START) ))
   (( delay > 0 )) && sleep $delay
-  WID=$("$LISTER" Ostra | head -1 | awk '{print $1}')
+  # The window of the copy this script launched, not any other Ostra.
+  WID=$("$LISTER" $PID | head -1 | awk '{print $1}')
   if [ -n "$WID" ]; then
-    screencapture -x -o -l"$WID" "$OUT/$name.png"
+    screencapture -x -o -l"$WID" "$OUT/$name.png" || echo "Couldn't capture '$name'."
   else
     echo "No Ostra window on screen for '$name'."
   fi
 done
-kill -TERM $PID 2>/dev/null || true
-wait $PID 2>/dev/null || true

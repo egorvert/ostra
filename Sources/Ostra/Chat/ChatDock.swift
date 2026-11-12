@@ -19,8 +19,11 @@ struct ChatDock: View {
     /// spring of its own, so content that changes with it, such as another
     /// agent's conversation, still changes at once.
     @State private var shownPaneHeight: CGFloat = 0
-    /// The agent the dock showed on its last pass.
-    @State private var shownAgentID: AgentID?
+    /// The room on screen for the request bar and the gap under it. Like the
+    /// pane's height, it follows on a spring of its own, so switching to an
+    /// agent with a request, or away from one, slides the pane instead of
+    /// jumping it.
+    @State private var shownRequestRoom: CGFloat = 0
 
     var body: some View {
         let agent = app.store.selectedAgent
@@ -36,9 +39,12 @@ struct ChatDock: View {
         ))
         // A short conversation gets a short pane; the pane grows with it.
         let paneHeight = min(tallest, max(wantedHeight(agent, tab: app.chatTab), wantedHeight(pinned, tab: .chat))).rounded()
+        let requestRoom = hasRequest ? (requestHeight + gap).rounded() : 0
 
         GlassEffectContainer(spacing: gap) {
-            VStack(spacing: gap) {
+            // The gaps are spelled out, so a request bar's room can shrink
+            // to nothing without leaving a gap of its own behind.
+            VStack(spacing: 0) {
                 if showPane, let agent {
                     HStack(spacing: gap) {
                         ChatPane(agent: agent)
@@ -48,24 +54,40 @@ struct ChatDock: View {
                         }
                     }
                     .frame(height: shownPaneHeight)
+                    .padding(.bottom, gap)
                     .transition(.rise)
                     .zIndex(1)
                 }
 
-                if let agent, let request = agent.snapshot.pendingRequest {
-                    Group {
-                        if agent.phase == .awaitingInput {
-                            QuestionBar(agent: agent, request: request)
-                        } else {
-                            ApprovalBar(agent: agent, request: request)
+                // The bar hangs from the bottom of its room and sits under
+                // the pane, so while the room grows, the pane slides up and
+                // uncovers it; while the room shrinks, the pane slides down.
+                ZStack(alignment: .bottom) {
+                    if let agent, let request = agent.snapshot.pendingRequest {
+                        Group {
+                            if agent.phase == .awaitingInput {
+                                QuestionBar(agent: agent, request: request)
+                            } else {
+                                ApprovalBar(agent: agent, request: request)
+                            }
                         }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { requestHeight = $0 }
+                        .padding(.bottom, gap)
+                        // Another request, such as another agent's, fades in
+                        // over the last one.
+                        .id(request.id)
+                        // It fades in once the pane has mostly moved off
+                        // it, so it never shows through the pane's glass.
+                        .transition(.asymmetric(
+                            insertion: .opacity.animation(Motion.popIn.delay(0.12)),
+                            removal: .opacity.animation(Motion.popOut)
+                        ))
                     }
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { requestHeight = $0 }
-                    // The bar sits under the pane, so the pane uncovers it
-                    // as it moves up to make room.
-                    .transition(.opacity)
-                    .zIndex(0)
                 }
+                .frame(maxWidth: .infinity)
+                .frame(height: shownRequestRoom, alignment: .bottom)
+                .zIndex(0)
 
                 PromptInput()
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { inputHeight = $0 }
@@ -83,20 +105,21 @@ struct ChatDock: View {
         // joins the dock, the top edge moves and the bottom edge stays where
         // it is: for a tab, an agent, or a new message alike.
         .frame(maxHeight: .infinity, alignment: .bottom)
-        // A request that arrives while you watch slides in. Switching to an
-        // agent that already has one shows it at once.
-        .animation(shownAgentID == agent?.id ? Motion.resize : nil, value: agent?.snapshot.pendingRequest?.id)
+        // Heights catch up in transactions of their own, so only frames
+        // animate, never the text that changed with them.
         .onChange(of: paneHeight, initial: true) { old, new in
-            // The height catches up in a transaction of its own, so only
-            // the pane's frame animates, never the text that changed with it.
             if showPane, old != new, shownPaneHeight > 0 {
                 Motion.perform(Motion.resize) { shownPaneHeight = new }
             } else {
                 shownPaneHeight = new
             }
         }
-        .onChange(of: app.store.selectedAgentID, initial: true) { _, id in
-            shownAgentID = id
+        .onChange(of: requestRoom, initial: true) { old, new in
+            if old != new {
+                Motion.perform(Motion.resize) { shownRequestRoom = new }
+            } else {
+                shownRequestRoom = new
+            }
         }
         .onChange(of: tallest, initial: true) { _, limit in
             app.chatPaneLimit = limit
@@ -142,11 +165,19 @@ struct PromptInput: View {
 
             ZStack(alignment: .topLeading) {
                 if app.draft.isEmpty {
-                    Text(app.isDropTargeted ? "Drop to attach" : placeholder(agent))
-                        .font(Theme.text(14))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .allowsHitTesting(false)
+                    let prompt = app.isDropTargeted ? "Drop to attach" : placeholder(agent)
+                    ZStack(alignment: .topLeading) {
+                        Text(prompt)
+                            .font(Theme.text(14))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            // Another agent's name fades in with its conversation.
+                            .id(prompt)
+                            .transition(.crossfade)
+                    }
+                    .allowsHitTesting(false)
+                    // The first character typed replaces it at once.
+                    .transition(.identity)
                 }
                 ChatTextView(
                     text: $app.draft,
@@ -164,7 +195,11 @@ struct PromptInput: View {
 
             HStack(spacing: 16) {
                 attachButton
-                tools(agent)
+                ZStack(alignment: .leading) {
+                    HStack(spacing: 16) { tools(agent) }
+                        .id(agent?.id)
+                        .transition(.crossfade)
+                }
                 Spacer(minLength: 8)
                 submitButton(agent)
             }

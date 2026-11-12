@@ -3,7 +3,8 @@ import SwiftUI
 
 /// Global search: one field, and everything in the app underneath it.
 ///
-/// It opens at once and has no entrance, because it opens many times a day.
+/// It settles in quickly (`AnyTransition.palette`). The field takes focus
+/// as it appears, so typing never waits for the motion.
 struct SearchView: View {
     @Environment(AppModel.self) private var app
     @FocusState private var focused: Bool

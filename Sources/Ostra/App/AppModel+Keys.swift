@@ -142,28 +142,20 @@ extension AppModel {
         return false
     }
 
-    /// Command-1 to 9 switch tabs in the pane that has them; Option-Command-1
-    /// to 4 switch the code panel's tools wherever the chat is.
+    /// Command and a number switch the chat's tabs; Option and a number
+    /// switch the code panel's tools. Each opens its pane when it's closed.
     private func handleTabChord(_ press: KeyPress) -> Bool {
-        guard press.command, !press.control, !press.shift,
+        guard press.command != press.option, !press.control, !press.shift,
               case let .character(character) = press.key,
               let digit = Int(String(character)), (1...9).contains(digit) else { return false }
         let index = digit - 1
         if press.option {
             guard WorkspaceTool.allCases.indices.contains(index) else { return true }
             Motion.perform(Motion.tabContent) { setWorkspaceTool(WorkspaceTool.allCases[index]) }
-            return true
-        }
-        switch digitPane {
-        case .chat:
-            guard ChatTab.allCases.indices.contains(index) else { return true }
+        } else {
+            guard store.selectedAgentID != nil, ChatTab.allCases.indices.contains(index) else { return true }
             openChat()
             Motion.perform(Motion.tabContent) { setChatTab(ChatTab.allCases[index]) }
-        case .workspace:
-            guard WorkspaceTool.allCases.indices.contains(index) else { return true }
-            Motion.perform(Motion.tabContent) { setWorkspaceTool(WorkspaceTool.allCases[index]) }
-        case nil:
-            break
         }
         return true
     }

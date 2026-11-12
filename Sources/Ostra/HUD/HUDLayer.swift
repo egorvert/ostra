@@ -138,10 +138,10 @@ private struct MenuCorner: View {
                 switch app.overlay {
                 case let .menu(id):
                     KeyMenuView(menu: app.menu(for: id))
-                        .transition(.pop(from: anchor))
+                        .transition(.menu(from: anchor))
                 case .picker:
                     AgentPickerView()
-                        .transition(.pop(from: anchor))
+                        .transition(.menu(from: anchor))
                 default:
                     EmptyView()
                 }

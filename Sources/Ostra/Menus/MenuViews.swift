@@ -154,12 +154,13 @@ struct ModalLayer: View {
                     .transition(.sheet)
             case .search:
                 backdrop
-                GeometryReader { geometry in
-                    SearchView()
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, max(72, geometry.size.height * 0.16))
-                }
-                .hudRegion("search", in: app.hudRegions)
+                // The transition sits on the panel itself, so it scales
+                // from the panel's top edge, not the window's.
+                SearchView()
+                    .transition(.palette)
+                    .hudRegion("search", in: app.hudRegions)
+                    .padding(.top, max(72, app.viewSize.height * 0.16))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             default:
                 EmptyView()
             }

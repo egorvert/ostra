@@ -353,10 +353,10 @@ struct Keymap {
     static func isReserved(_ chord: KeyChord) -> Bool {
         if chord.key == .escape { return true }
         if case let .character(character) = chord.key {
-            if character.isNumber, character != "0", !chord.control, !chord.shift {
-                // 1–9 pick answers; Command picks tabs; Option-Command picks tools.
-                if !chord.command, !chord.option { return true }
-                if chord.command { return true }
+            // 1–9 pick answers, Command and a number pick chat tabs, and
+            // Option and a number pick code panel tools.
+            if character.isNumber, character != "0", !chord.control, !chord.shift, !(chord.command && chord.option) {
+                return true
             }
             if chord.command, !chord.control, !chord.option, !chord.shift, "qwhvcxa".contains(character) {
                 return true
@@ -438,7 +438,7 @@ enum ShortcutCatalog {
         ]),
         Section(title: "Panels", rows: [
             .command(.codePanel),
-            .fixed("Code panel tools", "⌥⌘1", "–", "⌥⌘4"),
+            .fixed("Code panel tools", "⌥1", "–", "⌥4"),
             .fixed("Leave the terminal", "⇧esc"),
             .command(.statusPane),
         ]),

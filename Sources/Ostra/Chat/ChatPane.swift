@@ -16,47 +16,59 @@ struct ChatPane: View {
         VStack(spacing: 0) {
             header(tab: tab)
             Hairline()
+            // Another agent's content cross-fades in while the pane's
+            // height morphs around it. The outer stack holds the old and new
+            // content on top of each other while they fade.
             ZStack {
-                Group {
-                    switch tab {
-                    case .chat: ChatTimeline(agent: agent)
-                    case .activity: ActivityView(agent: agent)
-                    case .diff: DiffView(agent: agent)
+                ZStack {
+                    Group {
+                        switch tab {
+                        case .chat: ChatTimeline(agent: agent)
+                        case .activity: ActivityView(agent: agent)
+                        case .diff: DiffView(agent: agent)
+                        }
                     }
+                    .id(tab)
+                    .transition(.crossfade)
                 }
-                .id(tab)
-                .transition(.swap(forward: app.chatTabForward))
+                .id(agent.id)
+                .transition(.crossfade)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipShape(Rectangle())
-            // Swapping agents with the keyboard happens all day, so the
-            // content changes at once. Only a change of tab animates.
-            .id(agent.id)
-            .transaction(value: agent.id) { $0.animation = nil }
         }
         .glassPanel(cornerRadius: Theme.panelRadius, frost: app.settings.data.chatFrost)
     }
 
     private func header(tab: ChatTab) -> some View {
         HStack(spacing: 8) {
-            if StatusDot.isVisible(phase: agent.phase, unseen: false) {
-                StatusDot(phase: agent.phase, unseen: false, size: 8)
-            }
+            // What names the agent cross-fades with the content below. The
+            // old and new sit on top of each other, so nothing shifts.
+            ZStack(alignment: .leading) {
+                HStack(spacing: 8) {
+                    if StatusDot.isVisible(phase: agent.phase, unseen: false) {
+                        StatusDot(phase: agent.phase, unseen: false, size: 8)
+                    }
 
-            if app.rename?.agentID == agent.id {
-                RenameField()
-                    .layoutPriority(1)
-            } else {
-                Text(agent.name)
-                    .font(Theme.ui(14, .medium))
-                    .lineLimit(1)
-                    .layoutPriority(1)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { app.beginRename(agent.id) }
-                    .help(app.help("Double-click to rename", .rename))
-            }
+                    if app.rename?.agentID == agent.id {
+                        RenameField()
+                            .layoutPriority(1)
+                    } else {
+                        Text(agent.name)
+                            .font(Theme.ui(14, .medium))
+                            .lineLimit(1)
+                            .layoutPriority(1)
+                            .contentShape(Rectangle())
+                            .onTapGesture(count: 2) { app.beginRename(agent.id) }
+                            .help(app.help("Double-click to rename", .rename))
+                    }
 
-            statusLine
+                    statusLine
+                }
+                .id(agent.id)
+                .transition(.crossfade)
+            }
+            .layoutPriority(1)
 
             Spacer(minLength: 12)
 

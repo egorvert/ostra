@@ -436,31 +436,14 @@ final class AppModel {
 
     // MARK: - Number keys
 
-    /// The pane whose tabs Command and a number switch: the chat pane while
-    /// it's open, and the code panel otherwise.
-    enum DigitPane {
-        case chat
-        case workspace
-    }
-
-    var digitPane: DigitPane? {
-        if chatOpen, store.selectedAgentID != nil { return .chat }
-        if workspaceOpen { return .workspace }
-        return store.selectedAgentID == nil ? nil : .chat
-    }
-
-    /// The key that selects a chat tab, for the hint beside its label.
+    /// The key that selects a chat tab: Command and its number, in every mode.
     func hint(for tab: ChatTab) -> String? {
-        guard digitPane == .chat, let index = ChatTab.allCases.firstIndex(of: tab) else { return nil }
-        return "⌘\(index + 1)"
+        ChatTab.allCases.firstIndex(of: tab).map { "⌘\($0 + 1)" }
     }
 
-    /// The key that selects a tool in the code panel. While the chat pane
-    /// holds Command and a number, the tools show no key, so the two panes
-    /// never show the same one.
+    /// The key that selects a code panel tool: Option and its number, in every mode.
     func hint(for tool: WorkspaceTool) -> String? {
-        guard digitPane == .workspace, let index = WorkspaceTool.allCases.firstIndex(of: tool) else { return nil }
-        return "⌘\(index + 1)"
+        WorkspaceTool.allCases.firstIndex(of: tool).map { "⌥\($0 + 1)" }
     }
 
     // MARK: - Diffs
@@ -499,9 +482,9 @@ final class AppModel {
 
     func open(_ overlay: Overlay, animated: Bool) {
         let isSheet = overlay == .settings || overlay == .shortcuts
-        // Sheets always animate. Menus grow out of their corner, however
-        // they open; moving from one menu to another happens at once. Search
-        // opens at once from a key, because it opens hundreds of times a day.
+        // Sheets always animate. Menus rise out of their corner and search
+        // settles in, however they open, on a quick curve; moving from one
+        // menu to another happens at once.
         let animates = isSheet || animated && (self.overlay == .none || !overlay.isCornerMenu || !self.overlay.isCornerMenu)
         recordingShortcut = nil
         Motion.perform(isSheet ? Motion.sheet : Motion.popIn, animated: animates) {
@@ -522,7 +505,7 @@ final class AppModel {
         let isSheet = overlay == .settings || overlay == .shortcuts
         if overlay == .search { store.loadsEveryConversation = false }
         recordingShortcut = nil
-        Motion.perform(isSheet ? Motion.sheetOut : Motion.popOut, animated: animated || isSheet || overlay.isCornerMenu) {
+        Motion.perform(isSheet ? Motion.sheetOut : Motion.popOut, animated: animated || isSheet || overlay.isCornerMenu || overlay == .search) {
             overlay = .none
         }
     }

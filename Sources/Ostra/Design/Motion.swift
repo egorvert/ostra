@@ -3,10 +3,11 @@ import SwiftUI
 /// Animation curves, timings, and transitions.
 ///
 /// The rules behind them:
-/// - Actions that repeat all day don't animate: cycling agents, moving a
-///   selection, and search opened with a key. Use `Motion.instantly`. Menus
-///   are the exception: they grow out of their corner in a fast ease-out,
-///   however they open, so the eye knows where they came from.
+/// - Actions that repeat all day don't move things: cycling agents and
+///   moving a selection. Use `Motion.instantly`. Three exceptions, kept
+///   small and quick: menus rise out of their corner, search settles in
+///   from just above, and the chat pane cross-fades to another agent's
+///   content while its height morphs, so nothing teleports.
 /// - Panels animate however they open, because a surface that covers part of
 ///   the canvas has to show where it came from. They use springs without
 ///   bounce, so a panel that closes mid-way reverses from where it is.
@@ -44,9 +45,15 @@ enum Motion {
     static let press = easeOut(0.14)
     /// Hover and color changes.
     static let hover = Animation.easeOut(duration: 0.15 * scale)
-    /// Menus and popovers, however they open: quick, with a strong ease-out.
-    static let popIn = easeOut(0.16)
+    /// Popovers, search, and small things that appear in place.
+    static let popIn = easeOut(0.18)
     static let popOut = easeOut(0.11)
+    /// Menus, however they open: they rise and fade in on a strong ease-out.
+    static let menuIn = easeOut(0.24)
+    /// Content that replaces other content in place. The old content leaves
+    /// quickly; the new content arrives a beat later and takes longer.
+    static let fadeOut = easeOut(0.12)
+    static let fadeIn = easeOut(0.26).delay(0.04 * scale)
     /// Large glass panels: the chat pane, the code panel, and the status pane.
     static let panel = spring(0.36)
     static let panelOut = spring(0.26)
@@ -140,6 +147,42 @@ extension AnyTransition {
         .asymmetric(
             insertion: AnyTransition(Materialize(scale: 0.97, offset: CGSize(width: 0, height: 8))),
             removal: AnyTransition(Materialize(scale: 0.985))
+        )
+    }
+
+    /// Content that replaces other content in the same place, such as another
+    /// agent's conversation or another tab of the chat pane. The two barely
+    /// overlap, and a little blur hides what overlap there is. The timing
+    /// travels with the transition, so it fades however the change happened.
+    static var crossfade: AnyTransition {
+        .asymmetric(
+            insertion: AnyTransition(Materialize(blur: 2)).animation(Motion.fadeIn),
+            removal: AnyTransition(Materialize(blur: 2)).animation(Motion.fadeOut)
+        )
+    }
+
+    /// A menu: it rises a little from below as it fades in, and sinks back
+    /// as it leaves, so it reads as coming out of its button.
+    static func menu(from anchor: UnitPoint) -> AnyTransition {
+        .asymmetric(
+            insertion: AnyTransition(Materialize(scale: 0.98, anchor: anchor, offset: CGSize(width: 0, height: 14)))
+                .animation(Motion.menuIn),
+            removal: AnyTransition(Materialize(scale: 0.99, anchor: anchor, offset: CGSize(width: 0, height: 6)))
+                .animation(Motion.popOut)
+        )
+    }
+
+    /// The search bar. It settles into place from just above as it fades
+    /// in, and fades out faster. It hangs near the top of the window rather
+    /// than from a trigger, so it scales from its own top edge. It opens many
+    /// times a day, so the motion stays small and quick, and the field takes
+    /// typing from the first frame.
+    static var palette: AnyTransition {
+        .asymmetric(
+            insertion: AnyTransition(Materialize(scale: 0.98, anchor: .top, offset: CGSize(width: 0, height: -6)))
+                .animation(Motion.popIn),
+            removal: AnyTransition(Materialize(scale: 0.99, anchor: .top))
+                .animation(Motion.popOut)
         )
     }
 

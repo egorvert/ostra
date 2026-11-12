@@ -56,7 +56,8 @@ You don't have to memorize shortcuts. Press **M** for the menu; every menu shows
 | `Tab` | Go to the next agent, even while you type. `F` changes which agents `Tab` visits. |
 | `Space` | Open or close the chat |
 | `Y` / `N` | Approve or deny what the agent asks for |
-| `⌘1` – `⌘3` | Switch tabs in the open pane, even while you type. Each tab shows its key. |
+| `⌘1` – `⌘3` | Switch the chat's tabs, even while you type. Each tab shows its key. |
+| `⌥1` – `⌥4` | Switch the code panel's tools: diff, files, terminal, and activity |
 | `⌘V` | Paste text, images, or files into the message |
 | `\` | Split the chat to show two agents side by side |
 
