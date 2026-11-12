@@ -48,10 +48,7 @@ enum WorkspaceTool: String, CaseIterable, Identifiable {
 
 enum MenuID: Hashable {
     case main
-    case add
     case projects
-    case models
-    case permissions
     case archived
 }
 
@@ -64,6 +61,16 @@ enum Overlay: Equatable {
     case settings
     case shortcuts
     case search
+}
+
+extension Overlay {
+    /// True for the menus and the agent picker, which grow out of the menu button.
+    var isCornerMenu: Bool {
+        switch self {
+        case .menu, .picker: true
+        default: false
+        }
+    }
 }
 
 /// An agent's name while the user edits it in the chat pane's header.
@@ -115,6 +122,10 @@ final class AppModel {
     var searchFileMatches: [FileMatch] = []
     /// The agent whose name is being edited, if any.
     var rename: RenameState?
+    /// The shortcut waiting for a key press in the shortcuts sheet.
+    var recordingShortcut: ShortcutSlot?
+    /// What the last shortcut change did, shown in the shortcuts sheet.
+    var shortcutNote: String?
 
     // MARK: Input
 
@@ -132,6 +143,8 @@ final class AppModel {
     var diffs: [AgentID: DiffState] = [:]
     /// The height each agent's conversation needs, so the pane can hug short ones.
     var conversationHeights: [AgentID: CGFloat] = [:]
+    /// The tallest the chat pane can be right now. The dock keeps it current.
+    var chatPaneLimit: CGFloat = 640
 
     // MARK: Canvas
 
@@ -254,7 +267,8 @@ final class AppModel {
             openChat()
         } else {
             guard store.currentProject != nil else {
-                store.toast(.init(kind: .error, text: "Add a project first: press A, then P."))
+                let key = keymap.label(for: .addProject) ?? "⌘O"
+                store.toast(.init(kind: .error, text: "Add a project first: press \(key)."))
                 return
             }
             guard store.spawnProvider != nil else {
@@ -422,8 +436,8 @@ final class AppModel {
 
     // MARK: - Number keys
 
-    /// The pane whose tabs the plain number keys switch: the chat pane while
-    /// it's open, and the left panel otherwise.
+    /// The pane whose tabs Command and a number switch: the chat pane while
+    /// it's open, and the code panel otherwise.
     enum DigitPane {
         case chat
         case workspace
@@ -435,22 +449,18 @@ final class AppModel {
         return store.selectedAgentID == nil ? nil : .chat
     }
 
-    /// True while the selected agent's question owns the number keys.
-    private var questionTakesDigits: Bool {
-        store.selectedAgent?.phase == .awaitingInput
-    }
-
     /// The key that selects a chat tab, for the hint beside its label.
     func hint(for tab: ChatTab) -> String? {
-        guard !questionTakesDigits, let index = ChatTab.allCases.firstIndex(of: tab) else { return nil }
-        return "\(index + 1)"
+        guard digitPane == .chat, let index = ChatTab.allCases.firstIndex(of: tab) else { return nil }
+        return "⌘\(index + 1)"
     }
 
-    /// The key that selects a tool in the left panel.
+    /// The key that selects a tool in the code panel. While the chat pane
+    /// holds Command and a number, the tools show no key, so the two panes
+    /// never show the same one.
     func hint(for tool: WorkspaceTool) -> String? {
-        guard let index = WorkspaceTool.allCases.firstIndex(of: tool) else { return nil }
-        let plain = digitPane == .workspace && !questionTakesDigits
-        return plain ? "\(index + 1)" : "⌘\(index + 1)"
+        guard digitPane == .workspace, let index = WorkspaceTool.allCases.firstIndex(of: tool) else { return nil }
+        return "⌘\(index + 1)"
     }
 
     // MARK: - Diffs
@@ -489,9 +499,12 @@ final class AppModel {
 
     func open(_ overlay: Overlay, animated: Bool) {
         let isSheet = overlay == .settings || overlay == .shortcuts
-        // Sheets always animate. Menus and search open at once from a key,
-        // because they open hundreds of times a day.
-        Motion.perform(isSheet ? Motion.sheet : Motion.popIn, animated: animated || isSheet) {
+        // Sheets always animate. Menus grow out of their corner, however
+        // they open; moving from one menu to another happens at once. Search
+        // opens at once from a key, because it opens hundreds of times a day.
+        let animates = isSheet || animated && (self.overlay == .none || !overlay.isCornerMenu || !self.overlay.isCornerMenu)
+        recordingShortcut = nil
+        Motion.perform(isSheet ? Motion.sheet : Motion.popIn, animated: animates) {
             menuHighlight = 0
             pickerHighlight = 0
             pickerQuery = ""
@@ -508,7 +521,8 @@ final class AppModel {
         guard overlay != .none else { return }
         let isSheet = overlay == .settings || overlay == .shortcuts
         if overlay == .search { store.loadsEveryConversation = false }
-        Motion.perform(isSheet ? Motion.sheetOut : Motion.popOut, animated: animated || isSheet) {
+        recordingShortcut = nil
+        Motion.perform(isSheet ? Motion.sheetOut : Motion.popOut, animated: animated || isSheet || overlay.isCornerMenu) {
             overlay = .none
         }
     }
@@ -544,9 +558,10 @@ final class FocusCoordinator {
         (NSApp.keyWindow ?? NSApp.mainWindow)?.firstResponder
     }
 
-    /// True while a text field or text view takes typing.
+    /// True while a text field or text view takes typing. Selected text in
+    /// the conversation doesn't count: it can be copied, not edited.
     var isEditingText: Bool {
-        firstResponder is NSTextView
+        (firstResponder as? NSTextView)?.isEditable == true
     }
 }
 

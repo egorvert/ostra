@@ -20,9 +20,7 @@ struct KeyMenuView: View {
                     .onHover { inside in
                         if inside, item.isEnabled { app.menuHighlight = index }
                     }
-                    .onTapGesture {
-                        if item.isEnabled { item.action() }
-                    }
+                    .onTapGesture { app.activate(item) }
             }
 
             if let footer = menu.footer {
@@ -46,8 +44,11 @@ private struct KeyMenuRow: View {
     var highlighted: Bool
 
     var body: some View {
-        HStack(spacing: 11) {
-            Keycap(item.key.label, size: 20, prominent: highlighted && item.isEnabled)
+        HStack(spacing: 8) {
+            // A fixed column, so titles line up when a key is wider than one letter.
+            Keycap(item.key ?? "", size: 20, prominent: highlighted && item.isEnabled)
+                .opacity(item.key == nil ? 0 : 1)
+                .frame(width: 30, alignment: .leading)
             Text(item.title)
                 .font(Theme.ui(13))
                 .lineLimit(1)
@@ -224,54 +225,234 @@ private struct ConfirmDeleteView: View {
     }
 }
 
-/// Every shortcut in one sheet.
+/// Every shortcut in one sheet. Clicking a shortcut records a new one.
 struct ShortcutsView: View {
     @Environment(AppModel.self) private var app
 
+    /// Three columns, balanced by hand so they end near the same line.
+    private static let columns: [[String]] = [
+        ["Basics", "Requests"],
+        ["Agents", "Panels"],
+        ["Chat", "Canvas"],
+    ]
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Shortcuts")
-                .font(Theme.ui(16, .medium))
+        let sections = Dictionary(uniqueKeysWithValues: ShortcutCatalog.sections.map { ($0.title, $0) })
+        let customized = !app.settings.data.keyBindings.isEmpty
+
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Shortcuts")
+                        .font(Theme.ui(16, .medium))
+                    Text("Click a shortcut to change it. Single keys work while the chat box doesn’t have the keyboard.")
+                        .font(Theme.text(12))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 16)
+                if customized {
+                    Button("Reset all") {
+                        app.recordingShortcut = nil
+                        app.shortcutNote = nil
+                        app.settings.data.keyBindings = [:]
+                    }
+                    .buttonStyle(.plain)
+                    .font(Theme.ui(12, .medium))
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
+                }
+                Keycap("esc", size: 18)
+                    .padding(.leading, 8)
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
+
+            Hairline()
 
             ScrollView {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 290, maximum: 420), spacing: 32, alignment: .top)],
-                    alignment: .leading,
-                    spacing: 26
-                ) {
-                    ForEach(ShortcutCatalog.sections) { section in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(section.title)
-                                .font(Theme.ui(12, .medium))
-                                .foregroundStyle(.tertiary)
-                            ForEach(section.entries) { entry in
-                                HStack(spacing: 10) {
-                                    HStack(spacing: 3) {
-                                        ForEach(Array(entry.keys.enumerated()), id: \.offset) { _, key in
-                                            if key == "–" {
-                                                Text("–").foregroundStyle(.tertiary)
-                                            } else {
-                                                Keycap(key, size: 19)
-                                            }
-                                        }
-                                    }
-                                    .frame(width: 88, alignment: .leading)
-                                    Text(entry.title)
-                                        .font(Theme.text(13))
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    Spacer(minLength: 0)
-                                }
+                HStack(alignment: .top, spacing: 24) {
+                    ForEach(Self.columns, id: \.self) { titles in
+                        VStack(alignment: .leading, spacing: 20) {
+                            ForEach(titles.compactMap { sections[$0] }) { section in
+                                ShortcutSectionView(section: section)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+                .padding(.bottom, 20)
+            }
+
+            Hairline()
+
+            Text(footnote)
+                .font(Theme.text(12))
+                .foregroundStyle(app.recordingShortcut == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.accent))
+                .lineLimit(1)
+                .padding(.horizontal, 28)
+                .frame(height: 40)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentTransition(.opacity)
+        }
+        .frame(maxWidth: 1040, maxHeight: 760)
+        .fixedSize(horizontal: false, vertical: true)
+        .glassPanel(cornerRadius: 28, frost: max(0.8, app.settings.data.panelFrost))
+        // A click on empty space stops listening for a shortcut.
+        .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .onTapGesture { app.recordingShortcut = nil }
+        .animation(Motion.hover, value: customized)
+        .animation(Motion.hover, value: footnote)
+        .padding(40)
+    }
+
+    private var footnote: String {
+        if app.recordingShortcut != nil {
+            return "Press the new shortcut. Delete removes it; Esc cancels."
+        }
+        return app.shortcutNote ?? "Right-click a shortcut to add another key or reset it."
+    }
+}
+
+private struct ShortcutSectionView: View {
+    let section: ShortcutCatalog.Section
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(section.title)
+                .font(Theme.ui(12, .medium))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 8)
                 .padding(.bottom, 4)
+            ForEach(section.rows) { row in
+                ShortcutRowView(row: row)
             }
         }
-        .padding(28)
-        .frame(maxWidth: 1040, maxHeight: 760)
-        .glassPanel(cornerRadius: 28, frost: max(0.8, app.settings.data.panelFrost))
-        .padding(40)
+    }
+}
+
+/// One shortcut: what it does on the left, its keys on the right.
+private struct ShortcutRowView: View {
+    let row: ShortcutCatalog.Row
+    @Environment(AppModel.self) private var app
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(row.title)
+                .font(Theme.text(13))
+                .foregroundStyle(isFixed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            keys
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 30)
+        .background {
+            // The sheet's corner less the section's inset keeps the corners concentric.
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(hovering && !isFixed ? 0.05 : 0))
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(Motion.hover, value: hovering)
+        .contextMenu {
+            if case let .commands(commands) = row.kind {
+                ForEach(commands) { command in
+                    let suffix = commands.count > 1 ? " for “\(command.title)”" : ""
+                    Button("Add a Shortcut\(suffix)") { app.beginRecording(ShortcutSlot(command: command, index: nil)) }
+                    Button("Reset to Default\(suffix)") {
+                        app.recordingShortcut = nil
+                        app.settings.keymap.reset(command)
+                    }
+                    .disabled(!app.keymap.isCustomized(command))
+                }
+            }
+        }
+    }
+
+    private var isFixed: Bool {
+        if case .fixed = row.kind { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private var keys: some View {
+        switch row.kind {
+        case let .fixed(labels):
+            HStack(spacing: 4) {
+                ForEach(Array(labels.enumerated()), id: \.offset) { _, label in
+                    if label == "–" {
+                        Text("–").font(Theme.text(12)).foregroundStyle(.tertiary)
+                    } else {
+                        Keycap(label, size: 20)
+                    }
+                }
+            }
+        case let .commands(commands):
+            HStack(spacing: 4) {
+                ForEach(commands) { command in
+                    let chords = app.keymap.chords(for: command)
+                    ForEach(Array(chords.enumerated()), id: \.offset) { index, chord in
+                        ChordButton(label: chord.label, slot: ShortcutSlot(command: command, index: index))
+                    }
+                    // A command with no keys offers a slot; so does one that
+                    // is listening for an extra key.
+                    let adding = ShortcutSlot(command: command, index: nil)
+                    if chords.isEmpty || app.recordingShortcut == adding {
+                        ChordButton(label: nil, slot: adding)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A shortcut's keycap. Clicking it listens for a new chord to put in its place.
+private struct ChordButton: View {
+    /// The chord's label, or nil for a command with no keys yet.
+    var label: String?
+    var slot: ShortcutSlot
+    @Environment(AppModel.self) private var app
+    @Environment(\.colorScheme) private var scheme
+    @State private var hovering = false
+
+    var body: some View {
+        let recording = app.recordingShortcut == slot
+        Button {
+            if recording {
+                app.recordingShortcut = nil
+            } else {
+                app.beginRecording(slot)
+            }
+        } label: {
+            Text(recording ? "Press keys" : (label ?? "None"))
+                .font(Theme.mono(11, .medium))
+                .foregroundStyle(
+                    recording ? AnyShapeStyle(Theme.accent)
+                        : (label == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(hovering ? .primary : .secondary))
+                )
+                .padding(.horizontal, 6)
+                .frame(minWidth: 20, minHeight: 20)
+                .background {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(recording ? 0 : (hovering ? 0.14 : (scheme == .dark ? 0.10 : 0.055))))
+                }
+                .overlay {
+                    if recording {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(Theme.accent, lineWidth: 1.5)
+                    }
+                }
+                .fixedSize()
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.pressable)
+        .onHover { hovering = $0 }
+        .animation(Motion.hover, value: hovering)
+        .help("Change this shortcut")
     }
 }

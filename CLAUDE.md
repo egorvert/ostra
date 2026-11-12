@@ -6,12 +6,12 @@ A native macOS coding-agent harness: agents on a canvas, a Liquid Glass HUD, and
 
 - `Sources/OstraCore`: models, the `AgentBackend` protocol, `AppStore` (state, selection, layout, persistence), parsers (`UnifiedDiff`, `Markdown`), and `MockBackend`. No UI imports.
 - `Sources/T3Bridge`: `T3Backend`. Installs the pinned T3 Code release, supervises `t3 serve`, authenticates, and maps the server's Effect RPC stream to OstraCore types.
-- `Sources/Ostra`: the SwiftUI app. `App/` holds `AppModel` (UI state, the key router, menus, the camera). `Canvas/`, `HUD/`, `Chat/`, `Menus/`, `Workspace/`, `Settings/`, and `Design/` hold views.
+- `Sources/Ostra`: the SwiftUI app. `App/` holds `AppModel` (UI state, the key router, menus, the camera) and `Keymap` (every shortcut). `Canvas/`, `HUD/`, `Chat/`, `Menus/`, `Workspace/` (the code panel), `Settings/`, and `Design/` hold views.
 - `Scripts/`: `bundle.sh` builds `dist/Ostra.app`; `snapshot.sh` scripts the app and captures its window.
 
 ## Rules that keep the design intact
 
-- **Less is the brief.** At rest the HUD is the chat box and one button per corner. Before adding anything permanent, try the menu (`M`) or showing it only when relevant.
+- **Less is the brief.** At rest the HUD is the chat box and one button per corner. The code panel opens on the side the settings choose; the menu and the status pane take the other side. Before adding anything permanent, try the menu (`M`) or showing it only when relevant.
 - **Everything that floats is glass.** The HUD, agent cards, and project regions are Liquid Glass, so they show over any background. What sits inside a panel (the conversation, a diff, a file) stays plain. Keep glass monochrome.
 - **Cards share one `GlassEffectContainer`.** A container draws its glass above everything else in it, so anything that must show over a card (the selection ring, the status dot) goes in `AgentCardAdornment`, a layer above the container. Project regions stay outside the container, or the cards melt into them.
 - **Ink follows the backdrop.** `adaptiveTone(over:)` gives a node dark or light glass and text from the brightness of the canvas behind it. Put glass and text under the same modifier.
@@ -19,15 +19,20 @@ A native macOS coding-agent harness: agents on a canvas, a Liquid Glass HUD, and
 - **Type.** Geist for interface and reading text, Geist Mono for code. Use `Theme.ui`, `Theme.text`, and `Theme.mono`; don't call `.system` fonts for text. Sizes come from one scale: 11, 12, 13, 14, and 16 for Geist; 10, 11, and 12 for Geist Mono. No half sizes.
 - **Spacing and corners.** Spacing sits on a 4-point grid, and panel content starts 20 points from the edge. A row inside a rounded surface takes the surface's radius less its inset, so the corners stay concentric.
 - **The camera doesn't follow.** Selecting an agent or opening a panel never moves the canvas. `reveal` pans only for a card that's off-screen. `G` and `0` are the explicit camera keys.
-- **Motion.** Read `Design/Motion.swift` first. Panels animate however they open, with springs that have no bounce. Changes that repeat all day don't animate: moving the selection, cycling agents, and menus or search opened with a key. Entrances start near full size, exits are faster, and bounce is for things the pointer threw. Every entrance is a `Materialize` transition, which drops movement when Reduce Motion is on.
+- **The chat stays put.** The dock stays in the middle of the window while an open code panel leaves room, and moves only as far as the panel needs (`AppModel.dockPlacement`). It hangs from the bottom of the window: when the pane changes height, for a tab, an agent, or a message, its top edge moves and its bottom edge stays.
+- **Cards don't overlap.** `AppStore.drag` keeps a dragged card `CanvasLayout.cardGap` clear of every other card; it slides along the card it meets.
+- **Motion.** Read `Design/Motion.swift` first. Panels animate however they open, with springs that have no bounce. Changes that repeat all day don't animate: moving the selection, cycling agents, and search opened with a key. Menus are the exception: they grow out of their corner in a fast ease-out, however they open. Switching agents swaps the content at once, and only the pane's height morphs. Entrances start near full size, exits are faster, and bounce is for things the pointer threw. Every entrance is a `Materialize` transition, which drops movement when Reduce Motion is on.
 - **The chat box has one form.** It always shows its text and its footer. Don't add a collapsed state.
 - **Chat patterns** follow shadcn's AI Elements (`vercel/ai-elements`): check that source before inventing a pattern.
+- **Conversation text is one selectable view per run.** `MarkdownView` draws paragraphs, lists, and quotes that sit together as one `SelectableText` (an `NSTextView`), so a drag selects across them. Don't put `.textSelection` on individual `Text` views in the conversation.
 
 ## Keyboard model
 
-`AppModel+Keys.swift` owns it. One local event monitor routes every key press: an open name editor first, then Command and Control shortcuts, then the open overlay, then text editing, then command mode. Add a key in one place: the `switch` in `handleCommandCharacter`, plus an entry in `ShortcutCatalog`.
+`Keymap.swift` lists every command with its default keys, and the user can change them from the shortcuts sheet (`?`). `AppModel+Keys.swift` routes every key press through one local event monitor: a shortcut being recorded first, then an open name editor, then the open overlay, then the terminal, then text editing, then command mode. While the chat box has the keyboard, only chords with Command or Control run commands, and so does Tab.
 
-Number keys switch tabs in the pane that has them (`AppModel.digitPane`): the chat pane while it's open, the left panel otherwise. A pending question takes the number keys first. Tabs show the key that works right now.
+A key means one thing. A menu row shows the key of the command it runs, and that key does the same thing with the menu closed; choices in a list take numbers. To add a command, add a case to `Command` with its title and default keys, handle it in `perform(_:)`, and list it in `ShortcutCatalog`.
+
+Command and a number switch tabs in the pane that has them (`AppModel.digitPane`): the chat pane while it's open, the code panel otherwise. Option-Command and a number always switch the code panel. Plain numbers pick an answer to a pending question. Tabs show the key that works right now.
 
 Everything the app can do is also an `Action` in `AppModel+Search.swift`, which feeds global search (Command-K). Add new commands there too.
 

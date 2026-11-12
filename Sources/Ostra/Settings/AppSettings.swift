@@ -44,6 +44,25 @@ enum CanvasStyle: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// The side of the window the code panel opens on. The menu and the status
+/// pane take the other side.
+enum PanelSide: String, Codable, CaseIterable, Identifiable {
+    case left
+    case right
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .left: "Left"
+        case .right: "Right"
+        }
+    }
+
+    /// The edge the code panel sits against.
+    var edge: HorizontalEdge { self == .left ? .leading : .trailing }
+}
+
 /// The user's preferences. Every field has a default, so old files keep loading.
 struct SettingsData: Codable, Equatable {
     var appearance: AppearanceMode = .light
@@ -63,6 +82,9 @@ struct SettingsData: Codable, Equatable {
     var panelFrost: Double = 0.3
     /// True when agents and projects pick dark or light ink from the canvas behind them.
     var adaptiveInk: Bool = true
+    var codePanelSide: PanelSide = .left
+    /// Shortcuts the user changed: chords as text, by command.
+    var keyBindings: [String: [String]] = [:]
 
     init() {}
 
@@ -79,6 +101,8 @@ struct SettingsData: Codable, Equatable {
         chatFrost = try container.decodeIfPresent(Double.self, forKey: .chatFrost) ?? defaults.chatFrost
         panelFrost = try container.decodeIfPresent(Double.self, forKey: .panelFrost) ?? defaults.panelFrost
         adaptiveInk = try container.decodeIfPresent(Bool.self, forKey: .adaptiveInk) ?? defaults.adaptiveInk
+        codePanelSide = try container.decodeIfPresent(PanelSide.self, forKey: .codePanelSide) ?? defaults.codePanelSide
+        keyBindings = try container.decodeIfPresent([String: [String]].self, forKey: .keyBindings) ?? [:]
     }
 }
 
@@ -113,7 +137,16 @@ final class AppSettings {
         defaults.set(encoded, forKey: key)
     }
 
+    /// Restores every preference but the shortcuts, which the shortcuts sheet resets.
     func reset() {
-        data = SettingsData()
+        var fresh = SettingsData()
+        fresh.keyBindings = data.keyBindings
+        data = fresh
+    }
+
+    /// The shortcuts, with the user's changes.
+    var keymap: Keymap {
+        get { Keymap(overrides: data.keyBindings) }
+        set { data.keyBindings = newValue.overrides }
     }
 }

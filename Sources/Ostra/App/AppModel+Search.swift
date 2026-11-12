@@ -300,64 +300,69 @@ extension AppModel {
         }
     }
 
+    /// The keycap for a command, as the keymap has it now.
+    private func keys(_ command: Command) -> [String] {
+        keymap.label(for: command).map { [$0] } ?? []
+    }
+
     private var allActions: [Action] {
         let selected = store.selectedAgent
         var actions: [Action] = [
             Action(id: "new-agent", title: "New agent", subtitle: store.currentProject.map { "In \($0.title)" },
-                   symbol: "plus", keys: ["⌘", "N"], keywords: ["add", "spawn", "create", "start"], featured: true) { [self] in
+                   symbol: "plus", keys: keys(.newAgent), keywords: ["add", "spawn", "create", "start"], featured: true) { [self] in
                 beginNewAgent()
             },
-            Action(id: "add-project", title: "Add a project folder", symbol: "folder.badge.plus", keys: ["A", "P"],
+            Action(id: "add-project", title: "Add a project folder", symbol: "folder.badge.plus", keys: keys(.addProject),
                    keywords: ["open", "repository", "directory"], featured: true) { [self] in
                 addProjectFromPanel()
             },
-            Action(id: "attach", title: "Attach files or images", symbol: "paperclip", keys: ["⌘", "U"],
+            Action(id: "attach", title: "Attach files or images", symbol: "paperclip", keys: keys(.attachFiles),
                    keywords: ["upload", "image", "screenshot", "file"]) { [self] in
                 chooseAttachments()
             },
-            Action(id: "paste", title: "Paste from the clipboard", symbol: "doc.on.clipboard", keys: ["⌘", "V"],
+            Action(id: "paste", title: "Paste from the clipboard", symbol: "doc.on.clipboard", keys: ["⌘V"],
                    keywords: ["image", "screenshot"]) { [self] in
                 pasteIntoDraft()
             },
-            Action(id: "workspace", title: workspaceOpen ? "Close the left panel" : "Open the left panel",
-                   symbol: "sidebar.left", keys: ["C"], keywords: ["workspace", "tools", "sidebar"], featured: true) { [self] in
+            Action(id: "workspace", title: workspaceOpen ? "Close the code panel" : "Open the code panel",
+                   symbol: settings.data.codePanelSide == .left ? "sidebar.left" : "sidebar.right", keys: keys(.codePanel), keywords: ["workspace", "tools", "sidebar"], featured: true) { [self] in
                 toggleWorkspace()
             },
             Action(id: "status", title: statusPaneOpen ? "Hide the status pane" : "Show the status pane",
-                   symbol: "list.bullet", keys: ["T"], keywords: ["agents", "list", "overview"]) { [self] in
+                   symbol: "list.bullet", keys: keys(.statusPane), keywords: ["agents", "list", "overview"]) { [self] in
                 toggleStatusPane()
             },
-            Action(id: "fit", title: "Zoom to fit", symbol: "arrow.up.left.and.arrow.down.right", keys: ["0"],
+            Action(id: "fit", title: "Zoom to fit", symbol: "arrow.up.left.and.arrow.down.right", keys: keys(.zoomToFit),
                    keywords: ["canvas", "camera", "everything", "reset"], featured: true) { [self] in
                 zoomToFit(animated: true)
             },
-            Action(id: "zoom-in", title: "Zoom in", symbol: "plus.magnifyingglass", keys: ["+"], keywords: ["canvas"]) { [self] in
+            Action(id: "zoom-in", title: "Zoom in", symbol: "plus.magnifyingglass", keys: keys(.zoomIn), keywords: ["canvas"]) { [self] in
                 zoomStep(1.25)
             },
-            Action(id: "zoom-out", title: "Zoom out", symbol: "minus.magnifyingglass", keys: ["-"], keywords: ["canvas"]) { [self] in
+            Action(id: "zoom-out", title: "Zoom out", symbol: "minus.magnifyingglass", keys: keys(.zoomOut), keywords: ["canvas"]) { [self] in
                 zoomStep(0.8)
             },
-            Action(id: "settings", title: "Settings", symbol: "gearshape", keys: ["⌘", ","],
+            Action(id: "settings", title: "Settings", symbol: "gearshape", keys: keys(.settings),
                    keywords: ["preferences", "background", "glass", "appearance", "theme"], featured: true) { [self] in
                 open(.settings, animated: true)
             },
-            Action(id: "shortcuts", title: "Keyboard shortcuts", symbol: "keyboard", keys: ["?"],
+            Action(id: "shortcuts", title: "Keyboard shortcuts", symbol: "keyboard", keys: keys(.shortcuts),
                    keywords: ["keys", "help", "cheat sheet"], featured: true) { [self] in
                 open(.shortcuts, animated: true)
             },
             Action(id: "filter", title: "Change what Tab cycles through", subtitle: store.cycleFilter.label,
-                   symbol: "line.3.horizontal.decrease", keys: ["F"], keywords: ["filter", "needs attention", "running"]) { [self] in
+                   symbol: "line.3.horizontal.decrease", keys: keys(.cycleFilter), keywords: ["filter", "needs attention", "running"]) { [self] in
                 nextFilter()
             },
-            Action(id: "quit", title: "Quit Ostra", symbol: "power", keys: ["⌘", "Q"], keywords: ["exit", "close"]) {
+            Action(id: "quit", title: "Quit Ostra", symbol: "power", keys: ["⌘Q"], keywords: ["exit", "close"]) {
                 Runtime.quit()
             },
         ]
 
         for (index, tool) in WorkspaceTool.allCases.enumerated() {
             actions.append(Action(
-                id: "tool-\(tool.rawValue)", title: "Show \(tool.label.lowercased())", subtitle: "Left panel",
-                symbol: tool.symbol, keys: ["⌘", "\(index + 1)"], keywords: ["workspace", "panel", tool.label]
+                id: "tool-\(tool.rawValue)", title: "Show \(tool.label.lowercased())", subtitle: "Code panel",
+                symbol: tool.symbol, keys: ["⌥⌘\(index + 1)"], keywords: ["workspace", "panel", tool.label]
             ) { [self] in
                 Motion.perform(Motion.tabContent) { setWorkspaceTool(tool) }
             })
@@ -403,35 +408,35 @@ extension AppModel {
         if let selected {
             let name = selected.name
             actions += [
-                Action(id: "rename", title: "Rename \(name)", symbol: "pencil", keys: ["R"], keywords: ["name", "edit"]) { [self] in
+                Action(id: "rename", title: "Rename \(name)", symbol: "pencil", keys: keys(.rename), keywords: ["name", "edit"]) { [self] in
                     beginRename(selected.id)
                 },
                 Action(id: "chat", title: chatOpen ? "Close the chat" : "Open the chat", subtitle: name,
-                       symbol: "bubble.left", keys: ["space"], keywords: ["conversation", "messages"]) { [self] in
+                       symbol: "bubble.left", keys: keys(.toggleChat), keywords: ["conversation", "messages"]) { [self] in
                     toggleChat()
                 },
-                Action(id: "center", title: "Go to \(name) on the canvas", symbol: "scope", keys: ["G"],
+                Action(id: "center", title: "Go to \(name) on the canvas", symbol: "scope", keys: keys(.goToAgent),
                        keywords: ["center", "find", "camera"]) { [self] in
                     center(on: selected, animated: true)
                 },
-                Action(id: "archive", title: "Archive \(name)", symbol: "archivebox", keys: ["D"], keywords: ["remove", "hide"]) { [self] in
+                Action(id: "archive", title: "Archive \(name)", symbol: "archivebox", keys: keys(.archive), keywords: ["remove", "hide"]) { [self] in
                     archive(selected.id)
                 },
-                Action(id: "delete", title: "Delete \(name)", symbol: "trash", keys: ["⇧", "D"], keywords: ["remove"]) { [self] in
+                Action(id: "delete", title: "Delete \(name)", symbol: "trash", keys: keys(.delete), keywords: ["remove"]) { [self] in
                     open(.confirmDelete(selected.id), animated: true)
                 },
             ]
             for (index, tab) in ChatTab.allCases.enumerated() {
                 actions.append(Action(
                     id: "tab-\(tab.rawValue)", title: "Show \(name)’s \(tab.label.lowercased())", subtitle: "Chat pane",
-                    symbol: "rectangle.split.3x1", keys: ["\(index + 1)"], keywords: [tab.label]
+                    symbol: "rectangle.split.3x1", keys: ["⌘\(index + 1)"], keywords: [tab.label]
                 ) { [self] in
                     openChat()
                     Motion.perform(Motion.tabContent) { setChatTab(tab) }
                 })
             }
             if selected.phase.isActive {
-                actions.append(Action(id: "stop", title: "Stop \(name)", symbol: "stop.fill", keys: ["X"],
+                actions.append(Action(id: "stop", title: "Stop \(name)", symbol: "stop.fill", keys: keys(.stop),
                                       keywords: ["interrupt", "cancel"]) { [self] in
                     store.interrupt(selected.id)
                 })
@@ -439,7 +444,7 @@ extension AppModel {
             if store.agents.count > 1 {
                 actions.append(Action(
                     id: "split", title: store.pinnedAgentID == nil ? "Split the chat" : "Close the split",
-                    symbol: "rectangle.split.2x1", keys: ["\\"], keywords: ["side by side", "two", "pin"]
+                    symbol: "rectangle.split.2x1", keys: keys(.split), keywords: ["side by side", "two", "pin"]
                 ) { [self] in
                     toggleSplit()
                 })

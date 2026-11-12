@@ -53,7 +53,7 @@ struct ChatPane: View {
                     .layoutPriority(1)
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) { app.beginRename(agent.id) }
-                    .help("Double-click to rename (R)")
+                    .help(app.help("Double-click to rename", .rename))
             }
 
             statusLine
@@ -61,8 +61,8 @@ struct ChatPane: View {
             Spacer(minLength: 12)
 
             if isPinned {
-                QuietIconButton(symbol: "arrow.left.arrow.right", help: "Swap sides (|)") { app.store.swapPinned() }
-                QuietIconButton(symbol: "xmark", help: "Close the split (\\)") {
+                QuietIconButton(symbol: "arrow.left.arrow.right", help: app.help("Swap sides", .swapSides)) { app.store.swapPinned() }
+                QuietIconButton(symbol: "xmark", help: app.help("Close the split", .split)) {
                     Motion.perform(Motion.panelOut) { app.store.pin(nil) }
                 }
             } else {
@@ -96,14 +96,43 @@ struct ChatPane: View {
                 }
             }
             if let usage = agent.conversation.meta.contextUsage {
-                // A bare percentage reads as a mystery number, so it says what it measures.
-                Text("\(Int((usage * 100).rounded()))% context")
-                    .foregroundStyle(usage > 0.85 ? AnyShapeStyle(Theme.red) : AnyShapeStyle(.tertiary))
-                    .help("How much of the model's context window this conversation uses")
+                ContextRing(usage: usage)
             }
         }
         .font(Theme.mono(11))
         .lineLimit(1)
+    }
+}
+
+/// How much of the model's context window the conversation uses, as a ring
+/// that fills clockwise from the top. The number shows on hover.
+struct ContextRing: View {
+    var usage: Double
+    var size: CGFloat = 12
+
+    var body: some View {
+        let fraction = min(max(usage, 0), 1)
+        let full = fraction > 0.85
+        ZStack {
+            Circle()
+                .stroke(Color.primary.opacity(0.12), lineWidth: 2)
+            Circle()
+                // A sliver stays visible at 0%, so the ring reads as a gauge.
+                .trim(from: 0, to: max(fraction, 0.03))
+                .stroke(
+                    full ? AnyShapeStyle(Theme.red) : AnyShapeStyle(.secondary),
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: size, height: size)
+        .padding(4)
+        .contentShape(Rectangle())
+        .animation(Motion.snappy, value: fraction)
+        .help("\(Int((fraction * 100).rounded()))% of the context window used")
+        .accessibilityElement()
+        .accessibilityLabel("Context window")
+        .accessibilityValue("\(Int((fraction * 100).rounded())) percent used")
     }
 }
 

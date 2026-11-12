@@ -75,6 +75,8 @@ enum Theme {
     static let cornerButton: CGFloat = 44
     /// The gap between the pieces of the dock.
     static let dockGap: CGFloat = 10
+    /// The least room between the dock and an open side panel.
+    static let panelGap: CGFloat = 12
     /// The height of a panel's header row.
     static let headerHeight: CGFloat = 44
 }

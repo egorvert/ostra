@@ -95,96 +95,151 @@ enum ChatRow: Identifiable {
 struct ChatTimeline: View {
     let agent: AgentModel
     @Environment(AppModel.self) private var app
-    @State private var position = ScrollPosition(edge: .bottom)
+    /// True while the reader is at the end, so new output stays in view.
+    /// Only the reader's own scrolling clears it: content that grows, or a
+    /// scroll the app animates, leaves it as it is.
     @State private var atBottom = true
+    /// True while the reader scrolls by hand.
+    @State private var userScrolling = false
     /// The row search jumped to, while its highlight shows.
     @State private var flashed: String?
+    /// False until the conversation has shown once, so the rows that load
+    /// with it appear together and only later ones animate in.
+    @State private var animatesRows = false
 
     var body: some View {
         let conversation = agent.conversation
         let rows = ChatRow.rows(from: conversation.items)
         let lastAssistant = rows.last { if case .assistant = $0 { true } else { false } }?.id
 
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                    ChatRowView(row: row, agent: agent, isLatestReply: row.id == lastAssistant)
-                        .background {
-                            // A row that search jumped to glows for a moment.
-                            if flashed == row.id {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Theme.accent.opacity(0.10))
-                                    .padding(-8)
-                                    .transition(.opacity)
+        // A scroll reader rather than a bound scroll position: a position
+        // bound at the bottom edge sticks to it, and pulls the content up
+        // before the pane has grown to show it.
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                        ChatRowView(row: row, agent: agent, isLatestReply: row.id == lastAssistant)
+                            .background {
+                                // A row that search jumped to glows for a moment.
+                                if flashed == row.id {
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(Theme.accent.opacity(0.10))
+                                        .padding(-8)
+                                        .transition(.opacity)
+                                }
                             }
-                        }
-                        .padding(.top, index == 0 ? 0 : row.topSpacing)
-                        .id(row.id)
+                            .padding(.top, index == 0 ? 0 : row.topSpacing)
+                            .id(row.id)
+                            .transition(.message)
+                    }
+                    if agent.phase.isRunning, !endsWithLiveOutput(rows) {
+                        Shimmer(text: agent.phase == .starting ? "Starting" : "Thinking")
+                            .font(Theme.text(13))
+                            .padding(.top, rows.isEmpty ? 0 : 16)
+                            // Output takes its place at once, so the two never overlap.
+                            .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                    }
+                    // The end of the conversation, and its bottom margin.
+                    Color.clear
+                        .frame(height: 20)
+                        .id(Self.end)
                 }
-                if agent.phase.isRunning, !endsWithLiveOutput(rows) {
-                    Shimmer(text: agent.phase == .starting ? "Starting" : "Thinking")
-                        .font(Theme.text(13))
-                        .padding(.top, rows.isEmpty ? 0 : 16)
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .animation(animatesRows ? Motion.message : nil, value: rows.map(\.id))
+                .onGeometryChange(for: CGFloat.self) { $0.size.height.rounded() } action: { height in
+                    let grew = height > (app.conversationHeights[agent.id] ?? 0)
+                    app.conversationHeights[agent.id] = height
+                    // While the pane can still grow, it grows to show what
+                    // arrived. Once it's full height, the conversation scrolls
+                    // to the new output, as long as the reader is at the end.
+                    if grew, atBottom, height > viewportLimit { follow(proxy) }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .scrollTargetLayout()
-            .onGeometryChange(for: CGFloat.self) { $0.size.height.rounded() } action: { height in
-                app.conversationHeights[agent.id] = height
+            // Open at the end. The anchor lets go once the conversation has
+            // shown, because while it holds, the content sticks to the bottom
+            // and jumps up before the pane has grown to show what arrived.
+            .defaultScrollAnchor(animatesRows ? nil : .bottom, for: .initialOffset)
+            .scrollIndicators(.automatic)
+            .onScrollPhaseChange { _, phase in
+                userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
             }
-        }
-        .scrollPosition($position)
-        .defaultScrollAnchor(.bottom)
-        .scrollIndicators(.automatic)
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 28
-        } action: { _, value in
-            atBottom = value
-        }
-        .onChange(of: conversation.revision) { _, _ in
-            // Follow new output only while the reader is at the end.
-            if atBottom { position.scrollTo(edge: .bottom) }
-        }
-        .onChange(of: app.scrollTargets[agent.id], initial: true) { _, target in
-            guard let target else { return }
-            app.scrollTargets[agent.id] = nil
-            jump(to: target)
-        }
-        .overlay {
-            if rows.isEmpty, !agent.phase.isRunning {
-                emptyState(loaded: conversation.isLoaded)
-            }
-        }
-        .overlay(alignment: .bottom) {
-            if !atBottom {
-                Button {
-                    withAnimation(Motion.snappy) { position.scrollTo(edge: .bottom) }
-                } label: {
-                    Image(systemName: "arrow.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 30, height: 30)
-                        .contentShape(Circle())
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 28
+            } action: { _, atEnd in
+                if atEnd {
+                    atBottom = true
+                } else if userScrolling {
+                    atBottom = false
                 }
-                .buttonStyle(.pressable)
-                .glassEffect(.regular.interactive(), in: Circle())
-                .padding(.bottom, 12)
-                .transition(.scale(scale: 0.9).combined(with: .opacity))
-                .help("Jump to the latest message")
             }
+            .onChange(of: app.chatPaneLimit) { old, new in
+                // A full pane that gives up height, say to a request bar, keeps the end in view.
+                let content = app.conversationHeights[agent.id] ?? 0
+                if new < old, atBottom, content > viewportLimit { follow(proxy) }
+            }
+            .task(id: conversation.isLoaded) {
+                guard conversation.isLoaded, !animatesRows else { return }
+                try? await Task.sleep(for: .milliseconds(400))
+                animatesRows = true
+            }
+            .onChange(of: app.scrollTargets[agent.id], initial: true) { _, target in
+                guard let target else { return }
+                app.scrollTargets[agent.id] = nil
+                jump(to: target, with: proxy)
+            }
+            .overlay {
+                if rows.isEmpty, !agent.phase.isRunning {
+                    emptyState(loaded: conversation.isLoaded)
+                        // The first message takes its place at once.
+                        .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if !atBottom {
+                    Button {
+                        atBottom = true
+                        withAnimation(Motion.snappy) { proxy.scrollTo(Self.end, anchor: .bottom) }
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 30, height: 30)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.pressable)
+                    .glassEffect(.regular.interactive(), in: Circle())
+                    .padding(.bottom, 12)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    .help("Jump to the latest message")
+                }
+            }
+            .animation(Motion.easeOut(0.16), value: atBottom)
         }
-        .animation(Motion.easeOut(0.16), value: atBottom)
+    }
+
+    /// The ID of the space after the last row.
+    private static let end = "conversation-end"
+
+    /// Scrolls to the end of a full pane, with the pane's own spring, so
+    /// arriving output moves in step with the pane around it.
+    private func follow(_ proxy: ScrollViewProxy) {
+        withAnimation(animatesRows ? Motion.resize : nil) { proxy.scrollTo(Self.end, anchor: .bottom) }
+    }
+
+    /// The tallest the conversation's view gets: the pane's limit, less its header.
+    private var viewportLimit: CGFloat {
+        app.chatPaneLimit - Theme.headerHeight - 1
     }
 
     /// Brings a row to the middle of the pane and marks it for a moment.
-    private func jump(to row: String) {
+    private func jump(to row: String, with proxy: ScrollViewProxy) {
         Task {
             // Give a pane that just opened one pass to lay out its rows.
             try? await Task.sleep(for: .milliseconds(60))
-            position.scrollTo(id: row, anchor: .center)
+            proxy.scrollTo(row, anchor: .center)
             withAnimation(Motion.hover) { flashed = row }
             try? await Task.sleep(for: .seconds(1.4))
             withAnimation(Motion.easeOut(0.5)) { flashed = nil }
@@ -237,10 +292,7 @@ struct ChatRowView: View {
                         Spacer(minLength: 48)
                         CopyButton(text: text)
                             .opacity(hovering ? 1 : 0)
-                        Text(text)
-                            .font(Theme.text(14))
-                            .lineSpacing(4)
-                            .textSelection(.enabled)
+                        SelectableText(text: RichText.plain(text, size: 14, lineSpacing: 4), fillsWidth: false)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 9)
                             .background {

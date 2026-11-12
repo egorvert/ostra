@@ -8,6 +8,7 @@
 #   wait:1.5  key:tab  key:shift+d  key:cmd+,  type:hello_world  send
 #   project:/path  model:codex/gpt-5.6-luna  tool:files  frost:0  appearance:dark  quit
 #   image:/path.jpg  ink:off  canvas:1C1D21  attach:/path  attachtext:words  search:text  rename
+#   side:right  record:menu/0  nudge:Bob,-30,-100  move:x,y  drag:x1,y1,x2,y2 (window points)
 #
 # Set OSTRA_MOTION_SCALE=6 to slow every animation, then capture a few frames
 # close together to study a transition.

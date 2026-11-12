@@ -378,6 +378,14 @@ public final class AppStore {
         }
     }
 
+    /// Moves an agent's card as close to `target` as it gets without
+    /// touching another card. Dragging a card into another makes it slide
+    /// along the other's edge.
+    public func drag(_ id: AgentID, to target: CGPoint) {
+        let others = agents.filter { $0.id != id }.map(\.position)
+        move(id, to: CanvasLayout.resolveCollisions(target, avoiding: others))
+    }
+
     /// Moves an agent's card.
     public func move(_ id: AgentID, to position: CGPoint) {
         guard let agent = agent(id) else { return }
@@ -529,10 +537,13 @@ public final class AppStore {
             ?? AgentNames.pick(for: snapshot.id, taken: Set(agents.map(\.name)))
         if projectAnchors[snapshot.projectID] == nil { assignAnchor(for: snapshot.projectID) }
         let saved = persisted.positions[snapshot.id.rawValue]
-        let position = saved ?? CanvasLayout.freeSlot(
+        let slot = saved ?? CanvasLayout.freeSlot(
             anchor: projectAnchors[snapshot.projectID] ?? .zero,
             occupied: agents(in: snapshot.projectID).map(\.position)
         )
+        // A saved spot may have been taken since, and a new slot may reach
+        // into another project's cards: either way, the card moves clear.
+        let position = CanvasLayout.resolveCollisions(slot, avoiding: agents.map(\.position))
         let agent = AgentModel(snapshot: snapshot, name: name, position: position)
         index[snapshot.id] = agent
         agents.append(agent)

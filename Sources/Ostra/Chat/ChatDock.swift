@@ -7,15 +7,18 @@ import SwiftUI
 /// The pieces share one glass container, so they blend where they meet and
 /// the pane grows out of the chat box when it opens.
 struct ChatDock: View {
-    /// The widest the dock can be in the current window.
-    var availableWidth: CGFloat
+    /// The dock's width. `AppModel.dockPlacement` decides it.
+    var width: CGFloat
 
     @Environment(AppModel.self) private var app
     @State private var inputHeight: CGFloat = 92
-    @State private var requestHeight: CGFloat = 0
-    /// False for a moment after the agent changes, so a new agent's pane
-    /// appears at its size instead of growing into it.
-    @State private var heightAnimates = true
+    /// The request bar's height. It starts at a typical bar's height, so the
+    /// first bar and the pane's room for it arrive together.
+    @State private var requestHeight: CGFloat = 124
+    /// The pane height on screen. It follows the height the pane wants on a
+    /// spring of its own, so content that changes with it, such as another
+    /// agent's conversation, still changes at once.
+    @State private var shownPaneHeight: CGFloat = 0
     /// The agent the dock showed on its last pass.
     @State private var shownAgentID: AgentID?
 
@@ -32,12 +35,7 @@ struct ChatDock: View {
             app.dockMaxHeight - inputHeight - gap - (hasRequest ? requestHeight + gap : 0)
         ))
         // A short conversation gets a short pane; the pane grows with it.
-        let paneHeight = min(tallest, max(wantedHeight(agent, tab: app.chatTab), wantedHeight(pinned, tab: .chat)))
-        let split = showPane && pinned != nil
-        let columnWidth = split
-            ? min(Theme.chatWidth, max(Theme.chatMinWidth, (availableWidth - gap) / 2))
-            : min(Theme.chatWidth, availableWidth)
-        let width = split ? min(columnWidth * 2 + gap, availableWidth) : columnWidth
+        let paneHeight = min(tallest, max(wantedHeight(agent, tab: app.chatTab), wantedHeight(pinned, tab: .chat))).rounded()
 
         GlassEffectContainer(spacing: gap) {
             VStack(spacing: gap) {
@@ -49,9 +47,9 @@ struct ChatDock: View {
                                 .transition(.slide(from: .trailing))
                         }
                     }
-                    .frame(height: paneHeight)
-                    .animation(heightAnimates ? Motion.snappy : nil, value: paneHeight)
+                    .frame(height: shownPaneHeight)
                     .transition(.rise)
+                    .zIndex(1)
                 }
 
                 if let agent, let request = agent.snapshot.pendingRequest {
@@ -63,19 +61,16 @@ struct ChatDock: View {
                         }
                     }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { requestHeight = $0 }
-                    .transition(.pop(from: .bottom))
+                    // The bar sits under the pane, so the pane uncovers it
+                    // as it moves up to make room.
+                    .transition(.opacity)
+                    .zIndex(0)
                 }
 
                 PromptInput()
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { inputHeight = $0 }
             }
             .frame(width: width)
-            // A request that arrives while you watch slides in. Switching to
-            // an agent that already has one shows it at once.
-            .animation(
-                shownAgentID == agent?.id ? Motion.snappy : nil,
-                value: agent?.snapshot.pendingRequest?.id
-            )
         }
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
@@ -83,13 +78,28 @@ struct ChatDock: View {
             app.hudRegions.set("chat", frame)
         }
         .onDisappear { app.hudRegions.set("chat", nil) }
+        // The dock hangs from the bottom of the window. The frame sits inside
+        // the animations, so when the pane changes height, or a request bar
+        // joins the dock, the top edge moves and the bottom edge stays where
+        // it is: for a tab, an agent, or a new message alike.
+        .frame(maxHeight: .infinity, alignment: .bottom)
+        // A request that arrives while you watch slides in. Switching to an
+        // agent that already has one shows it at once.
+        .animation(shownAgentID == agent?.id ? Motion.resize : nil, value: agent?.snapshot.pendingRequest?.id)
+        .onChange(of: paneHeight, initial: true) { old, new in
+            // The height catches up in a transaction of its own, so only
+            // the pane's frame animates, never the text that changed with it.
+            if showPane, old != new, shownPaneHeight > 0 {
+                Motion.perform(Motion.resize) { shownPaneHeight = new }
+            } else {
+                shownPaneHeight = new
+            }
+        }
         .onChange(of: app.store.selectedAgentID, initial: true) { _, id in
             shownAgentID = id
-            heightAnimates = false
-            Task {
-                try? await Task.sleep(for: .milliseconds(320))
-                heightAnimates = true
-            }
+        }
+        .onChange(of: tallest, initial: true) { _, limit in
+            app.chatPaneLimit = limit
         }
     }
 
@@ -102,7 +112,9 @@ struct ChatDock: View {
         guard agent.conversation.isLoaded, let content = app.conversationHeights[agent.id] else {
             return header + 132
         }
-        return header + max(content, 112)
+        // An empty conversation keeps room for its note. Otherwise the pane
+        // hugs the conversation exactly, so it never shows slack to anchor.
+        return header + max(content, agent.conversation.items.isEmpty ? 112 : 64)
     }
 }
 
@@ -193,7 +205,7 @@ struct PromptInput: View {
                 .contentShape(Rectangle().inset(by: -6))
         }
         .buttonStyle(.pressable)
-        .help("Attach files or images (⌘U). Paste works too.")
+        .help(app.help("Attach files or images", .attachFiles) + ". Paste works too.")
     }
 
     /// One button, two jobs: it stops a running agent while there's nothing
@@ -220,7 +232,7 @@ struct PromptInput: View {
         .disabled(!canSend && !stops)
         .animation(Motion.hover, value: canSend)
         .animation(Motion.hover, value: stops)
-        .help(stops ? "Stop \(agent?.name ?? "the agent") (X)" : "Send (↩)")
+        .help(stops ? app.help("Stop \(agent?.name ?? "the agent")", .stop) : "Send (↩)")
     }
 
     /// What the message goes to. The three places stay put: project, model,
@@ -360,14 +372,16 @@ struct ApprovalBar: View {
 
             HStack(spacing: 16) {
                 Spacer(minLength: 0)
-                quiet("Deny", key: app.isTyping ? "⌘⌫" : "N") { app.store.respond(.decline, to: agent.id) }
-                quiet("Always allow", key: app.isTyping ? "⌘⇧↩" : "⇧Y") { app.store.respond(.acceptForSession, to: agent.id) }
+                quiet("Deny", key: key(.deny)) { app.store.respond(.decline, to: agent.id) }
+                quiet("Always allow", key: key(.approveAlways)) { app.store.respond(.acceptForSession, to: agent.id) }
                 Button {
                     app.store.respond(.accept, to: agent.id)
                 } label: {
                     HStack(spacing: 6) {
                         Text("Allow").font(Theme.ui(13, .medium))
-                        Text(app.isTyping ? "⌘↩" : "Y").font(Theme.mono(11, .medium)).opacity(0.7)
+                        if let allow = key(.approve) {
+                            Text(allow).font(Theme.mono(11, .medium)).opacity(0.7)
+                        }
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 13)
@@ -384,6 +398,11 @@ struct ApprovalBar: View {
         .glassPanel(cornerRadius: 20, frost: max(app.settings.data.chatFrost, 0.35))
     }
 
+    /// The key that works right now: a single key, or a chord while typing.
+    private func key(_ command: Command) -> String? {
+        app.keymap.label(for: command, typing: app.isTyping)
+    }
+
     private var verb: String {
         switch request.kind {
         case .command: "run a command"
@@ -393,11 +412,13 @@ struct ApprovalBar: View {
         }
     }
 
-    private func quiet(_ title: String, key: String, action: @escaping () -> Void) -> some View {
+    private func quiet(_ title: String, key: String?, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Text(title).font(Theme.ui(13, .medium))
-                Text(key).font(Theme.mono(11, .medium)).foregroundStyle(.tertiary)
+                if let key {
+                    Text(key).font(Theme.mono(11, .medium)).foregroundStyle(.tertiary)
+                }
             }
             .foregroundStyle(.primary.opacity(0.8))
             .frame(height: 28)

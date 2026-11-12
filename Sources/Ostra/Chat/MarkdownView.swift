@@ -3,92 +3,64 @@ import OstraCore
 import SwiftUI
 
 /// Renders Markdown as native text blocks.
+///
+/// Paragraphs, headings, lists, and quotes that sit together draw as one
+/// `SelectableText`, so a reader can select across them. Code blocks,
+/// tables, and rules draw as views of their own between those runs.
 struct MarkdownView: View {
     var text: String
     var size: CGFloat = 13.5
 
+    private enum Segment {
+        case text([MarkdownBlock])
+        case code(language: String?, text: String)
+        case table(header: [String], rows: [[String]])
+        case rule
+    }
+
     var body: some View {
-        let blocks = Markdown.blocks(text)
+        let segments = Self.segments(Markdown.blocks(text))
         VStack(alignment: .leading, spacing: size * 0.72) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                view(for: block)
+            ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+                switch segment {
+                case let .text(blocks):
+                    SelectableText(text: RichText.blocks(blocks, size: size))
+                case let .code(language, text):
+                    CodeBlock(language: language, text: text, size: size - 1)
+                case let .table(header, rows):
+                    MarkdownTable(header: header, rows: rows, size: size - 0.5)
+                case .rule:
+                    Hairline().padding(.vertical, 2)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
-    private func view(for block: MarkdownBlock) -> some View {
-        switch block {
-        case let .paragraph(text):
-            Text(Self.inline(text, size: size))
-                .font(Theme.text(size))
-                .lineSpacing(size * 0.26)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-
-        case let .heading(level, text):
-            Text(Self.inline(text, size: size))
-                .font(Theme.text(size + CGFloat(max(0, 4 - level)) * 1.6, .semibold))
-                .textSelection(.enabled)
-                .padding(.top, level <= 2 ? 3 : 0)
-
-        case let .code(language, text):
-            CodeBlock(language: language, text: text, size: size - 1)
-
-        case let .list(items, _):
-            VStack(alignment: .leading, spacing: size * 0.34) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 7) {
-                        marker(for: item)
-                            .frame(minWidth: 14, alignment: .trailing)
-                        Text(Self.inline(item.text, size: size))
-                            .font(Theme.text(size))
-                            .lineSpacing(size * 0.22)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.leading, CGFloat(item.depth) * 16)
-                }
-            }
-
-        case let .quote(text):
-            HStack(alignment: .top, spacing: 10) {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(Color.primary.opacity(0.18))
-                    .frame(width: 3)
-                Text(Self.inline(text, size: size))
-                    .font(Theme.text(size))
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(size * 0.22)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-
-        case let .table(header, rows):
-            MarkdownTable(header: header, rows: rows, size: size - 0.5)
-
-        case .rule:
-            Hairline().padding(.vertical, 2)
+    private static func segments(_ blocks: [MarkdownBlock]) -> [Segment] {
+        var segments: [Segment] = []
+        var run: [MarkdownBlock] = []
+        func flush() {
+            if !run.isEmpty { segments.append(.text(run)) }
+            run = []
         }
-    }
-
-    @ViewBuilder
-    private func marker(for item: MarkdownBlock.ListItem) -> some View {
-        if let checked = item.checked {
-            Image(systemName: checked ? "checkmark.square.fill" : "square")
-                .font(.system(size: size - 1.5))
-                .foregroundStyle(checked ? Theme.accent : Color.secondary)
-        } else if let marker = item.marker {
-            Text(marker)
-                .font(Theme.text(size).monospacedDigit())
-                .foregroundStyle(.secondary)
-        } else {
-            Text("•")
-                .font(Theme.text(size, .bold))
-                .foregroundStyle(.tertiary)
+        for block in blocks {
+            switch block {
+            case let .code(language, text):
+                flush()
+                segments.append(.code(language: language, text: text))
+            case let .table(header, rows):
+                flush()
+                segments.append(.table(header: header, rows: rows))
+            case .rule:
+                flush()
+                segments.append(.rule)
+            case .paragraph, .heading, .list, .quote:
+                run.append(block)
+            }
         }
+        flush()
+        return segments
     }
 
     /// Styles inline Markdown: emphasis, links, and code spans.

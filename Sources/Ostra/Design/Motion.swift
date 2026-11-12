@@ -4,7 +4,9 @@ import SwiftUI
 ///
 /// The rules behind them:
 /// - Actions that repeat all day don't animate: cycling agents, moving a
-///   selection, and menus opened with a key. Use `Motion.instantly`.
+///   selection, and search opened with a key. Use `Motion.instantly`. Menus
+///   are the exception: they grow out of their corner in a fast ease-out,
+///   however they open, so the eye knows where they came from.
 /// - Panels animate however they open, because a surface that covers part of
 ///   the canvas has to show where it came from. They use springs without
 ///   bounce, so a panel that closes mid-way reverses from where it is.
@@ -42,10 +44,10 @@ enum Motion {
     static let press = easeOut(0.14)
     /// Hover and color changes.
     static let hover = Animation.easeOut(duration: 0.15 * scale)
-    /// Popovers and menus opened with the pointer.
-    static let popIn = easeOut(0.18)
-    static let popOut = easeOut(0.12)
-    /// Large glass panels: the chat pane, the left panel, and the status pane.
+    /// Menus and popovers, however they open: quick, with a strong ease-out.
+    static let popIn = easeOut(0.16)
+    static let popOut = easeOut(0.11)
+    /// Large glass panels: the chat pane, the code panel, and the status pane.
     static let panel = spring(0.36)
     static let panelOut = spring(0.26)
     /// Sheets that cover the window: settings and shortcuts.
@@ -59,6 +61,11 @@ enum Motion {
     static let camera = spring(0.5)
     /// Small state changes inside a view.
     static let snappy = spring(0.26)
+    /// A panel that changes height while it stays open: a new tab, another
+    /// agent, or a message that arrives.
+    static let resize = spring(0.34)
+    /// A message joining the conversation.
+    static let message = easeOut(0.32)
     /// Things that settle after the pointer lets go.
     static let settle = spring(0.42, bounce: 0.16)
     /// The canvas coasting after a flick.
@@ -143,6 +150,15 @@ extension AnyTransition {
         return .asymmetric(
             insertion: AnyTransition(Materialize(offset: CGSize(width: travel, height: 0), blur: 3)),
             removal: AnyTransition(Materialize(offset: CGSize(width: -travel, height: 0), blur: 3))
+        )
+    }
+
+    /// A message joining the conversation: it fades in and rises a little
+    /// from where the chat box is.
+    static var message: AnyTransition {
+        .asymmetric(
+            insertion: AnyTransition(Materialize(scale: 0.99, anchor: .bottom, offset: CGSize(width: 0, height: 10))),
+            removal: .opacity
         )
     }
 

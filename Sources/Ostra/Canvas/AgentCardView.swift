@@ -59,9 +59,10 @@ struct AgentCardView: View {
                     app.draggingAgentID = agent.id
                 }
                 let zoom = app.zoom
-                // The card stays under the pointer, at the offset it was grabbed.
+                // The card stays under the pointer, at the offset it was
+                // grabbed, until it meets another card: then it slides along it.
                 Motion.instantly {
-                    app.store.move(agent.id, to: CGPoint(
+                    app.store.drag(agent.id, to: CGPoint(
                         x: start.x + value.translation.width / zoom,
                         y: start.y + value.translation.height / zoom
                     ))

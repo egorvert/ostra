@@ -39,18 +39,51 @@ extension AppModel {
         )
     }
 
+    /// Where the dock sits: its width, and the x of its center in the window.
+    ///
+    /// The dock keeps clear of the corner buttons and of an open code panel.
+    /// It stays in the middle of the window while that leaves room, and
+    /// otherwise moves only as far as the panel needs.
+    var dockPlacement: (width: CGFloat, centerX: CGFloat) {
+        let width = viewSize.width
+        let margin = Theme.hudMargin
+        let corner = margin + Theme.cornerButton + margin
+        var lower = corner
+        var upper = width - corner
+        if workspaceOpen {
+            let reach = margin + workspaceWidth + Theme.panelGap
+            if settings.data.codePanelSide == .left {
+                lower = max(lower, reach)
+            } else {
+                upper = min(upper, width - reach)
+            }
+        }
+        let available = max(Theme.chatMinWidth - 80, upper - lower)
+        let gap = Theme.dockGap
+        let split = chatOpen && store.selectedAgentID != nil && store.pinnedAgentID != nil
+        let column = split
+            ? min(Theme.chatWidth, max(Theme.chatMinWidth, (available - gap) / 2))
+            : min(Theme.chatWidth, available)
+        let dockWidth = split ? min(column * 2 + gap, available) : column
+        let half = dockWidth / 2
+        guard lower + half <= upper - half else { return (dockWidth, (lower + upper) / 2) }
+        return (dockWidth, min(max(width / 2, lower + half), upper - half))
+    }
+
     /// The part of the window to frame content in: clear of the chat box and
-    /// of the left panel, but not of the chat pane, which floats over the canvas.
+    /// of the code panel, but not of the chat pane, which floats over the canvas.
     var freeRegion: CGRect {
         var rect = CGRect(origin: .zero, size: viewSize)
         let top: CGFloat = 50
         let bottom: CGFloat = 92
         var left: CGFloat = 28
+        var right: CGFloat = 28
         if workspaceOpen {
-            left = workspaceWidth + Theme.hudMargin + 24
+            let inset = workspaceWidth + Theme.hudMargin + 24
+            if settings.data.codePanelSide == .left { left = inset } else { right = inset }
         }
         rect.origin.x += left
-        rect.size.width -= left + 28
+        rect.size.width -= left + right
         rect.origin.y += top
         rect.size.height -= top + bottom
         if rect.width < 120 || rect.height < 80 {

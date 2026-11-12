@@ -3,7 +3,8 @@ import OstraCore
 import SwiftTerm
 import SwiftUI
 
-/// The left panel: tools that follow the selected agent.
+/// The code panel: tools that follow the selected agent. It opens on the
+/// side the settings choose.
 ///
 /// The panel is a host, not a diff viewer. Each tool is one case of
 /// `WorkspaceTool`, so adding a tool means adding a case and a view.
@@ -26,7 +27,8 @@ struct WorkspacePanel: View {
             .clipShape(Rectangle())
         }
         .glassPanel(cornerRadius: Theme.panelRadius, frost: app.settings.data.chatFrost)
-        .overlay(alignment: .trailing) { resizeHandle }
+        // The handle sits on the edge that faces the canvas.
+        .overlay(alignment: app.settings.data.codePanelSide == .left ? .trailing : .leading) { resizeHandle }
         .hudRegion("workspace", in: app.hudRegions)
     }
 
@@ -48,7 +50,7 @@ struct WorkspacePanel: View {
                         .lineLimit(1)
                 }
             }
-            QuietIconButton(symbol: "xmark", help: "Close (C)") { app.toggleWorkspace() }
+            QuietIconButton(symbol: "xmark", help: app.help("Close", .codePanel)) { app.toggleWorkspace() }
         }
         .padding(.leading, 11)
         .padding(.trailing, 9)
@@ -96,7 +98,7 @@ struct WorkspacePanel: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Dragging the panel's right edge resizes it.
+    /// Dragging the panel's inner edge resizes it.
     private var resizeHandle: some View {
         Color.clear
             .frame(width: 10)
@@ -110,8 +112,10 @@ struct WorkspacePanel: View {
                         let start = resizeStart ?? app.workspaceWidth
                         resizeStart = start
                         let limit = max(380, app.viewSize.width - 420)
+                        // A panel on the right grows as the edge moves left.
+                        let delta = app.settings.data.codePanelSide == .left ? value.translation.width : -value.translation.width
                         Motion.instantly {
-                            app.workspaceWidth = min(max(380, start + value.translation.width), limit)
+                            app.workspaceWidth = min(max(380, start + delta), limit)
                         }
                     }
                     .onEnded { _ in resizeStart = nil }

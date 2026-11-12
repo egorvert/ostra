@@ -127,6 +127,14 @@ struct SettingsView: View {
                             .labelsHidden()
                             .frame(width: 280)
                         }
+                        row("Code panel", note: "The menu and the status pane take the other side.") {
+                            Picker("", selection: codePanelSide) {
+                                ForEach(PanelSide.allCases) { Text($0.label).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .frame(width: 280)
+                        }
                     }
 
                     section("Engine") {
@@ -171,6 +179,14 @@ struct SettingsView: View {
         case let .reconnecting(attempt): "Reconnecting (attempt \(attempt))"
         case let .failed(message): message
         }
+    }
+
+    /// Moving the panels animates, the way they move when they open.
+    private var codePanelSide: Binding<PanelSide> {
+        Binding(
+            get: { app.settings.data.codePanelSide },
+            set: { side in Motion.perform(Motion.panel) { app.settings.data.codePanelSide = side } }
+        )
     }
 
     private var canvasColor: Binding<Color> {

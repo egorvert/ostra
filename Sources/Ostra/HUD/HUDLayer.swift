@@ -12,55 +12,71 @@ struct HUDLayer: View {
     var body: some View {
         GeometryReader { geometry in
             let margin = Theme.hudMargin
+            // The code panel takes one side; the menu and the status pane take the other.
+            let codeEdge = app.settings.data.codePanelSide.edge
+            let otherEdge = codeEdge.opposite
             let panelInset = app.workspaceOpen ? app.workspaceWidth + margin : 0
-            // Keep the dock clear of the corner buttons.
-            let corner = Theme.cornerButton + margin
-            let dockWidth = max(Theme.chatMinWidth - 80, geometry.size.width - panelInset - (margin + corner) * 2)
+            let dock = app.dockPlacement
 
             ZStack {
                 if app.workspaceOpen {
                     WorkspacePanel()
                         .frame(width: app.workspaceWidth)
-                        .padding(.leading, margin)
+                        .padding(codeEdge.edgeSet, margin)
                         .padding(.top, 44)
                         .padding(.bottom, margin + Theme.cornerButton + 12)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                        .transition(.slide(from: .leading))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: codeEdge.alignment)
+                        .transition(.slide(from: codeEdge))
                 }
 
-                CornerButton(symbol: "chevron.left.forwardslash.chevron.right", shape: .circle, active: app.workspaceOpen, help: "Workspace: diff, files, terminal, activity (C)") {
+                CornerButton(
+                    symbol: "chevron.left.forwardslash.chevron.right",
+                    shape: .circle,
+                    active: app.workspaceOpen,
+                    help: app.help("Code panel: diff, files, terminal, activity", .codePanel)
+                ) {
                     app.toggleWorkspace()
                 }
                 .hudRegion("workspace-button", in: app.hudRegions)
                 .padding(margin)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: codeEdge.bottomAlignment)
 
-                ChatDock(availableWidth: dockWidth)
+                // The dock stays in the middle of the window while it has
+                // room, and moves only as far as an open panel needs.
+                ChatDock(width: dock.width)
                     .padding(.bottom, margin)
-                    .padding(.leading, panelInset)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .offset(x: dock.centerX - geometry.size.width / 2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                MenuCorner()
+                MenuCorner(edge: otherEdge)
                     .padding(margin)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: otherEdge.bottomAlignment)
 
                 Notices()
                     .padding(.top, 14)
-                    .padding(.leading, panelInset)
+                    .padding(codeEdge.edgeSet, panelInset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 if app.statusPaneOpen {
                     StatusPane()
                         .padding(.top, 44)
-                        .padding(.trailing, margin)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                        .transition(.slide(from: .trailing, distance: 24))
+                        .padding(otherEdge.edgeSet, margin)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: otherEdge.topAlignment)
+                        .transition(.slide(from: otherEdge, distance: 24))
                 }
 
                 ModalLayer()
             }
         }
     }
+}
+
+extension HorizontalEdge {
+    var opposite: HorizontalEdge { self == .leading ? .trailing : .leading }
+    var edgeSet: Edge.Set { self == .leading ? .leading : .trailing }
+    var alignment: Alignment { self == .leading ? .leading : .trailing }
+    var topAlignment: Alignment { self == .leading ? .topLeading : .topTrailing }
+    var bottomAlignment: Alignment { self == .leading ? .bottomLeading : .bottomTrailing }
 }
 
 /// A single glass button that sits in a corner of the window.
@@ -108,25 +124,29 @@ private struct CornerGlass: ViewModifier {
     }
 }
 
-/// The bottom-right corner: the menu button, and whichever menu is open above it.
+/// The corner across from the code panel: the menu button, and whichever
+/// menu is open above it.
 private struct MenuCorner: View {
+    /// The side of the window the corner is on.
+    var edge: HorizontalEdge
     @Environment(AppModel.self) private var app
 
     var body: some View {
+        let anchor: UnitPoint = edge == .leading ? .bottomLeading : .bottomTrailing
         GlassEffectContainer(spacing: 12) {
-            VStack(alignment: .trailing, spacing: 10) {
+            VStack(alignment: edge == .leading ? .leading : .trailing, spacing: 10) {
                 switch app.overlay {
                 case let .menu(id):
                     KeyMenuView(menu: app.menu(for: id))
-                        .transition(.pop(from: .bottomTrailing))
+                        .transition(.pop(from: anchor))
                 case .picker:
                     AgentPickerView()
-                        .transition(.pop(from: .bottomTrailing))
+                        .transition(.pop(from: anchor))
                 default:
                     EmptyView()
                 }
 
-                CornerButton(symbol: "line.3.horizontal", shape: .square, active: isMenuOpen, help: "Menu (M)") {
+                CornerButton(symbol: "line.3.horizontal", shape: .square, active: isMenuOpen, help: app.help("Menu", .menu)) {
                     app.toggleMenu(.main, animated: true)
                 }
             }
@@ -230,7 +250,9 @@ private struct ToastView: View {
                 } label: {
                     HStack(spacing: 5) {
                         Text(label).font(Theme.ui(12, .medium))
-                        Text("Z").font(Theme.mono(10, .medium)).foregroundStyle(.tertiary)
+                        if let key = app.keymap.label(for: .undo) {
+                            Text(key).font(Theme.mono(10, .medium)).foregroundStyle(.tertiary)
+                        }
                     }
                     .foregroundStyle(Theme.accent)
                     .contentShape(Rectangle())

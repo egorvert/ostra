@@ -28,7 +28,7 @@ public struct CameraState: Codable, Hashable, Sendable {
 public enum CanvasLayout {
     /// The agent card.
     public static let cardSize = CGSize(width: 208, height: 64)
-    /// What must not overlap. Today that's the card itself.
+    /// What must not overlap. Today that's the card itself; `cardGap` keeps cards apart.
     public static let footprint = CGSize(width: 208, height: 64)
     /// The grid that new agents snap to. It leaves 24 points between cards.
     public static let cell = CGSize(width: 232, height: 88)
@@ -93,6 +93,60 @@ public enum CanvasLayout {
             }
         }
         return origin
+    }
+
+    /// The least space between two cards.
+    public static let cardGap: CGFloat = 12
+
+    /// True when a card at `position` would come closer than `cardGap` to a card at `other`.
+    public static func collides(_ position: CGPoint, with other: CGPoint) -> Bool {
+        abs(position.x - other.x) < footprint.width + cardGap - 0.01
+            && abs(position.y - other.y) < footprint.height + cardGap - 0.01
+    }
+
+    /// The position nearest to `target` where a card keeps `cardGap` clear
+    /// of every card in `others`.
+    ///
+    /// A card that runs into another slides along its edge: it's pushed out
+    /// the shortest way. Where pushes fight, between several cards, the
+    /// search widens to the nearest free spot.
+    public static func resolveCollisions(_ target: CGPoint, avoiding others: [CGPoint]) -> CGPoint {
+        let reachX = footprint.width + cardGap
+        let reachY = footprint.height + cardGap
+        var position = target
+        for _ in 0..<8 {
+            guard let other = others.first(where: { collides(position, with: $0) }) else { return position }
+            // The distance to move along each axis to clear `other`, and which way.
+            let dx = position.x >= other.x ? other.x + reachX - position.x : other.x - reachX - position.x
+            let dy = position.y >= other.y ? other.y + reachY - position.y : other.y - reachY - position.y
+            if abs(dx) <= abs(dy) {
+                position.x += dx
+            } else {
+                position.y += dy
+            }
+        }
+        if !others.contains(where: { collides(position, with: $0) }) { return position }
+
+        // Walk rings of candidates outward and take the closest free one.
+        let step: CGFloat = 8
+        for ring in 1...160 {
+            var best: (point: CGPoint, distance: CGFloat)?
+            let radius = CGFloat(ring) * step
+            for index in -ring...ring {
+                let offset = CGFloat(index) * step
+                for candidate in [
+                    CGPoint(x: target.x + offset, y: target.y - radius),
+                    CGPoint(x: target.x + offset, y: target.y + radius),
+                    CGPoint(x: target.x - radius, y: target.y + offset),
+                    CGPoint(x: target.x + radius, y: target.y + offset),
+                ] where !others.contains(where: { collides(candidate, with: $0) }) {
+                    let distance = hypot(candidate.x - target.x, candidate.y - target.y)
+                    if best == nil || distance < best!.distance { best = (candidate, distance) }
+                }
+            }
+            if let best { return best.point }
+        }
+        return target
     }
 
     /// The anchor for a new project's group: to the right of everything that exists.

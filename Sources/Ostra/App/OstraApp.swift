@@ -199,14 +199,88 @@ final class DebugScript {
                 case "image":
                     model.settings.data.backgroundImagePath = argument
                     model.settings.data.canvasStyle = argument.isEmpty ? .dots : .image
+                case "side":
+                    model.settings.data.codePanelSide = PanelSide(rawValue: argument) ?? .left
                 case "tool":
                     if let tool = WorkspaceTool(rawValue: argument) { model.setWorkspaceTool(tool) }
+                case "drag":
+                    let numbers = argument.split(separator: ",").compactMap { Double($0) }
+                    if numbers.count == 4 {
+                        Self.drag(from: CGPoint(x: numbers[0], y: numbers[1]), to: CGPoint(x: numbers[2], y: numbers[3]))
+                    }
+                case "record":
+                    // Listens for a new shortcut: record:menu or record:menu/0
+                    let parts = argument.split(separator: "/").map(String.init)
+                    if let command = Command(rawValue: parts[0]) {
+                        model.beginRecording(ShortcutSlot(command: command, index: parts.count > 1 ? Int(parts[1]) : nil))
+                    }
+                case "nudge":
+                    // Drags a card by name: nudge:Bob,-20,-70
+                    let parts = argument.split(separator: ",").map(String.init)
+                    if parts.count == 3, let agent = model.store.agents.first(where: { $0.name == parts[0] }),
+                       let dx = Double(parts[1]), let dy = Double(parts[2]) {
+                        let start = agent.position
+                        for step in 1...10 {
+                            let t = Double(step) / 10
+                            model.store.drag(agent.id, to: CGPoint(x: start.x + dx * t, y: start.y + dy * t))
+                            try? await Task.sleep(for: .milliseconds(16))
+                        }
+                    }
+                case "move":
+                    let numbers = argument.split(separator: ",").compactMap { Double($0) }
+                    if numbers.count == 2 { Self.move(to: CGPoint(x: numbers[0], y: numbers[1])) }
                 case "quit":
                     Runtime.quit()
                 default:
                     break
                 }
             }
+        }
+    }
+
+    /// Queues a pointer move to a window point, measured from the top-left.
+    static func move(to point: CGPoint) {
+        guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }),
+              let content = window.contentView,
+              let event = NSEvent.mouseEvent(
+                  with: .mouseMoved,
+                  location: NSPoint(x: point.x, y: content.bounds.height - point.y),
+                  modifierFlags: [],
+                  timestamp: ProcessInfo.processInfo.systemUptime,
+                  windowNumber: window.windowNumber,
+                  context: nil,
+                  eventNumber: 0,
+                  clickCount: 0,
+                  pressure: 0
+              ) else { return }
+        NSApp.postEvent(event, atStart: false)
+    }
+
+    /// Queues a left-button drag between two window points, measured from the top-left.
+    static func drag(from start: CGPoint, to end: CGPoint) {
+        guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }),
+              let content = window.contentView else { return }
+        func event(_ type: NSEvent.EventType, at point: CGPoint) -> NSEvent? {
+            NSEvent.mouseEvent(
+                with: type,
+                location: NSPoint(x: point.x, y: content.bounds.height - point.y),
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 1,
+                pressure: type == .leftMouseUp ? 0 : 1
+            )
+        }
+        var events = [event(.leftMouseDown, at: start)]
+        for step in 1...12 {
+            let t = CGFloat(step) / 12
+            events.append(event(.leftMouseDragged, at: CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t)))
+        }
+        events.append(event(.leftMouseUp, at: end))
+        for event in events.compactMap({ $0 }) {
+            NSApp.postEvent(event, atStart: false)
         }
     }
 
