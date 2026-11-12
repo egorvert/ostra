@@ -19,12 +19,11 @@ struct AgentCardView: View {
     private var isSelected: Bool { app.store.selectedAgentID == agent.id }
     private var isPinned: Bool { app.store.pinnedAgentID == agent.id }
     private var isDragging: Bool { app.draggingAgentID == agent.id }
-    private var isRenaming: Bool { app.rename?.agentID == agent.id && app.rename?.site == .card }
 
     var body: some View {
         let size = CanvasLayout.cardSize
 
-        CardFace(agent: agent, hidesName: isRenaming)
+        CardFace(agent: agent)
             .adaptiveTone(over: app.toneFrame(forWorld: CanvasLayout.footprintRect(at: agent.position)))
             .frame(width: size.width, height: size.height)
             .scaleEffect(isDragging ? 1.04 : 1)
@@ -34,15 +33,10 @@ struct AgentCardView: View {
             .gesture(dragGesture)
             .onTapGesture {
                 app.closeOverlay()
-                // The second click of a double-click renames the agent.
-                if NSApp.currentEvent?.clickCount == 2 {
-                    app.beginRename(agent.id, site: .card)
-                } else {
-                    app.select(agent.id, openChat: true)
-                }
+                app.select(agent.id, openChat: true)
             }
             .contextMenu {
-                Button("Rename") { app.beginRename(agent.id, site: .card) }
+                Button("Rename") { app.beginRename(agent.id) }
                 if agent.phase.isActive {
                     Button("Stop") { app.store.interrupt(agent.id) }
                 }
@@ -84,7 +78,6 @@ struct AgentCardView: View {
 /// adaptive color scheme reaches the glass and the text together.
 private struct CardFace: View {
     let agent: AgentModel
-    var hidesName: Bool
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous)
@@ -94,7 +87,6 @@ private struct CardFace: View {
                 .font(Theme.ui(14, .medium))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .opacity(hidesName ? 0 : 1)
             Text(line)
                 .font(Theme.text(12))
                 .foregroundStyle(.secondary)

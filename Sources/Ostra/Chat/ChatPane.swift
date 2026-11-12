@@ -43,9 +43,8 @@ struct ChatPane: View {
                 StatusDot(phase: agent.phase, unseen: false, size: 8)
             }
 
-            if app.rename?.agentID == agent.id, app.rename?.site == .header, !isPinned {
-                RenameField(font: Theme.ui(14, .medium))
-                    .frame(maxWidth: 180)
+            if app.rename?.agentID == agent.id {
+                RenameField()
                     .layoutPriority(1)
             } else {
                 Text(agent.name)
@@ -53,7 +52,7 @@ struct ChatPane: View {
                     .lineLimit(1)
                     .layoutPriority(1)
                     .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { app.beginRename(agent.id, site: .header) }
+                    .onTapGesture(count: 2) { app.beginRename(agent.id) }
                     .help("Double-click to rename (R)")
             }
 
@@ -97,9 +96,10 @@ struct ChatPane: View {
                 }
             }
             if let usage = agent.conversation.meta.contextUsage {
-                Text("\(Int((usage * 100).rounded()))%")
+                // A bare percentage reads as a mystery number, so it says what it measures.
+                Text("\(Int((usage * 100).rounded()))% context")
                     .foregroundStyle(usage > 0.85 ? AnyShapeStyle(Theme.red) : AnyShapeStyle(.tertiary))
-                    .help("Context window in use")
+                    .help("How much of the model's context window this conversation uses")
             }
         }
         .font(Theme.mono(11))
@@ -109,10 +109,15 @@ struct ChatPane: View {
 
 /// The text field that edits an agent's name in place.
 ///
+/// The field is exactly as wide as the name, so nothing beside it moves when
+/// editing starts, and it grows and shrinks with the text as the user types.
 /// Return commits and Esc cancels. A click anywhere else commits too, the way
 /// renaming works in Finder.
 struct RenameField: View {
-    var font: Font
+    var size: CGFloat = 14
+    var weight: Font.Weight = .medium
+    /// The widest the field gets before the text scrolls inside it.
+    var maxWidth: CGFloat = 240
     @Environment(AppModel.self) private var app
     @FocusState private var focused: Bool
 
@@ -122,12 +127,28 @@ struct RenameField: View {
             set: { app.rename?.text = $0 }
         ))
         .textFieldStyle(.plain)
-        .font(font)
+        .font(Theme.ui(size, weight))
         .focused($focused)
         .onSubmit { app.commitRename() }
+        // A text field takes all the width it's offered, so give it the
+        // width of its text and nothing more.
+        .frame(width: width(of: app.rename?.text ?? ""))
+        // The room for the insertion point borrows from the gap after the
+        // name, so what follows doesn't shift when editing starts.
+        .padding(.trailing, -Self.caretRoom)
         .onAppear { focused = true }
         .onChange(of: focused) { _, isFocused in
             if !isFocused { app.commitRename() }
         }
     }
+
+    /// The width `text` takes in the field's font, with room for the insertion point.
+    private func width(of text: String) -> CGFloat {
+        let measured = (text.isEmpty ? "Name" : text as NSString)
+            .size(withAttributes: [.font: Fonts.nsSans(size, weight)])
+            .width
+        return min(max(measured.rounded(.up) + Self.caretRoom, 24), maxWidth)
+    }
+
+    private static let caretRoom: CGFloat = 4
 }

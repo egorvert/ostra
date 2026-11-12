@@ -7,7 +7,7 @@
 # Steps are separated by spaces. See DebugScript in Sources/Ostra/App/OstraApp.swift:
 #   wait:1.5  key:tab  key:shift+d  key:cmd+,  type:hello_world  send
 #   project:/path  model:codex/gpt-5.6-luna  tool:files  frost:0  appearance:dark  quit
-#   image:/path.jpg  ink:off  canvas:1C1D21  attach:/path  attachtext:words  search:text  rename:card
+#   image:/path.jpg  ink:off  canvas:1C1D21  attach:/path  attachtext:words  search:text  rename
 #
 # Set OSTRA_MOTION_SCALE=6 to slow every animation, then capture a few frames
 # close together to study a transition.

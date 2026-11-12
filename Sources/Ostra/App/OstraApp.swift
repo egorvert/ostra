@@ -176,7 +176,7 @@ final class DebugScript {
                     model.attach(text: String(repeating: argument.replacingOccurrences(of: "_", with: " ") + "\n", count: 400))
                 case "rename":
                     if let id = model.store.selectedAgentID {
-                        model.beginRename(id, site: argument == "header" ? .header : .card)
+                        model.beginRename(id)
                     }
                 case "ink":
                     model.settings.data.adaptiveInk = argument != "off"

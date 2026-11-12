@@ -66,16 +66,9 @@ enum Overlay: Equatable {
     case search
 }
 
-/// An agent's name while the user edits it in place.
+/// An agent's name while the user edits it in the chat pane's header.
 struct RenameState: Equatable {
-    /// Where the editor shows.
-    enum Site {
-        case card
-        case header
-    }
-
     var agentID: AgentID
-    var site: Site
     var text: String
 }
 
@@ -335,14 +328,14 @@ final class AppModel {
 
     // MARK: - Rename
 
-    /// Starts editing an agent's name where it shows: on its card, or in the chat header.
-    func beginRename(_ id: AgentID, site: RenameState.Site? = nil) {
+    /// Starts editing an agent's name in the chat pane's header. The name is
+    /// edited in one place only, so the pane opens when it's closed.
+    func beginRename(_ id: AgentID) {
         guard let agent = store.agent(id) else { return }
         closeOverlay()
-        if store.selectedAgentID != id { select(id) }
-        let site = site ?? (chatOpen ? .header : .card)
-        if site == .card { reveal(agent, animated: true) }
-        rename = RenameState(agentID: id, site: site, text: agent.name)
+        if store.selectedAgentID != id, store.pinnedAgentID != id { select(id) }
+        openChat()
+        rename = RenameState(agentID: id, text: agent.name)
     }
 
     func commitRename() {

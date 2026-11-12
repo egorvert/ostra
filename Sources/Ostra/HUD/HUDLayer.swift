@@ -57,49 +57,9 @@ struct HUDLayer: View {
                         .transition(.slide(from: .trailing, distance: 24))
                 }
 
-                if let rename = app.rename, rename.site == .card, let agent = app.store.agent(rename.agentID) {
-                    CardRenameField(agent: agent)
-                }
-
                 ModalLayer()
             }
         }
-    }
-}
-
-/// The editor that sits over a card's name while the user renames the agent.
-///
-/// It lives in the HUD, not on the card, so the text stays sharp and readable
-/// at any zoom level.
-private struct CardRenameField: View {
-    let agent: AgentModel
-    @Environment(AppModel.self) private var app
-
-    var body: some View {
-        let zoom = app.zoom
-        let card = CanvasLayout.footprintRect(at: agent.position)
-        let origin = app.screenPoint(card.origin)
-        // At rest the field sits exactly on the name. Zoomed out, the name
-        // would be too small to edit, so the field keeps a readable size and
-        // gets a surface of its own.
-        let inPlace = zoom >= 0.9
-        let size = max(13, 14 * zoom)
-        let width = max(150, (card.width - 32) * zoom)
-        let nameCenter = origin.y + (card.height / 2 - 8.5) * zoom
-
-        RenameField(font: Theme.ui(size, .medium))
-            .padding(.horizontal, inPlace ? 0 : 10)
-            .frame(width: width + (inPlace ? 0 : 20), height: inPlace ? size + 6 : 30, alignment: .leading)
-            .background {
-                if !inPlace {
-                    Color.clear.glassPanel(cornerRadius: 10, frost: 0.7)
-                }
-            }
-            .position(
-                x: origin.x + 16 * zoom + width / 2,
-                y: inPlace ? nameCenter : origin.y + card.height * zoom / 2
-            )
-            .adaptiveTone(over: inPlace ? app.toneFrame(forWorld: card) : nil)
     }
 }
 
